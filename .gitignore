@@ -1,0 +1,6 @@
+*.csv
+*.txt
+!requirements.txt
+!Dictionaries/*
+__pycache__
+*.pyc

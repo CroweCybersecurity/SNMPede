@@ -1,0 +1,4 @@
+pysnmp >= 7.1.4
+cryptography >= 43.0.1
+pysnmp-mib
+psutils
