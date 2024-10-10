@@ -1,15 +1,20 @@
 from pysnmp.hlapi.v3arch.asyncio import *
-from pysnmp import debug
+#from pysnmp import debug
 import argparse
 import argcomplete
 from csv import DictWriter
 from os.path import exists
-from pysnmp.proto import rfc1902
-#import socket
 import asyncio
+from _modules.bulkwalk import *
+from _modules.config import *
+from _modules.get_multi import *
+from _modules.get_single import *
+from _modules.scan_port import *
+from _modules.write import *
 from _modules.helpers import *
 import psutil
 import traceback
+
 
 # MARK: Target Class
 class Target:
@@ -75,429 +80,11 @@ def write_fieldnames(filepath, fieldnames):
             file.write(fieldnames)
 
 
-# MARK: scan_port
-# async def scan_port(target, port, timeout):
-#     try:
-#         # Create a UDP socket for IPv4 or IPv6
-#         if target[2] == 'v4':
-#             family = socket.AF_INET
-#         else:
-#             family = socket.AF_INET6
-#         sock = socket.socket(family, socket.SOCK_DGRAM)
-#         sock.settimeout(timeout)
-
-#         # Send a dummy SNMP request (v1 via public community string like Nmap)
-#         data = b'\x30\x26\x02\x01\x00\x04\x06\x70\x75\x62\x6c\x69\x63\xa0\x19\x02\x04\x71\x3b\x1d\x4b\x02\x01\x00\x02\x01\x00\x30\x0b\x30\x09\x06\x05\x2b\x06\x01\x02\x01\x01\x00\x05\x00'
-#         if interface_addr4:
-#             sock.bind((interface_addr4, port))
-#         elif interface_addr6:
-#             sock.bind((interface_addr6, port))
-#         sock.sendto(data, (target[0], port))
-
-#         # Receive response
-#         response, _ = sock.recvfrom(1024)
-#         if response:
-#             print("Found something!")
-#             Target(target[0], target[1], target[2], port)
-#             return {'Host': target[0], 'Protocol': 'UDP', 'Port': port, 'Service': 'SNMP', 'Status': 'Open'}
-#     except socket.timeout:
-#         return {'Host': target[0], 'Protocol': 'UDP', 'Port': port, 'Service': 'SNMP', 'Status': 'Error: Timeout'}
-#     except Exception as e:
-#         print(f"[e] Error scanning {target}:{port}: {e}")
-#         return {'Host': target[0], 'Protocol': 'UDP', 'Port': port, 'Service': 'SNMP', 'Status': e}
-#     finally:
-#         sock.close()
-
-
 def append_csv(filepath, fieldnames, data):
     with open(filepath, 'a', encoding='utf-8', newline='') as csvfile:
         writer = DictWriter(csvfile, fieldnames=fieldnames)
         for d in data:
             writer.writerow(d)
-
-
-# MARK: v1/2c Login
-async def snmp_v12c_get(target, port, version, timeout, retries, delay, community_strings, instance=None):
-    # CAUTION:
-    # Target may be {FQDN, IP, IPVersion} sometimes pending the availability of an instance, hence the below standardization
-    if instance:
-        target = (instance.FQDN, instance.IP, instance.IPVersion)
-    
-    success = False
-
-    results = []
-    if engine_id:
-        snmpEngine = SnmpEngine(snmpEngineID=OctetString(hexValue=engine_id))
-    else:
-        snmpEngine = SnmpEngine()
-    
-    await asyncio.sleep(delay)
-
-    mpModel = 0 if version == 'v1' else 1  # SNMPv1 is mpModel 0, SNMPv2c is mpModel 1. Note that 2c often is backwards compatible
-    for community_string in community_strings:
-        if argdebug >= 1: print(f"[d] '{community_string}' -> {target[0]}:{port}/{version}")
-
-        if target[2] == 'v4' or instance.IPVersion == 'v4':
-            if instance:
-                transport_target = await UdpTransportTarget.create((instance.FQDN, port), timeout, retries)
-            else:
-                transport_target = await UdpTransportTarget.create((target[0], port), timeout, retries)
-        else:
-            if instance:
-                transport_target = await Udp6TransportTarget.create((instance.FQDN, port), timeout, retries)
-            else:
-                transport_target = await Udp6TransportTarget.create((target[0], port), timeout, retries)
-        
-        # Bind to NIC IP address
-        if interface_addr4:
-            transport_target.transportDomain = (interface_addr4, 0)
-        elif interface_addr6:
-            transport_target.transportDomain = (interface_addr6, 0)
-
-        await asyncio.sleep(delay)
-
-        errorIndication, errorStatus, errorIndex, varBinds = await getCmd(
-            snmpEngine,
-            CommunityData(community_string, mpModel=mpModel),
-            transport_target,
-            ContextData(),
-            ObjectType(ObjectIdentity(oid_read))
-        )
-
-        if errorIndication:
-            if argdebug >= 1: print(f"[d] Error: {errorIndication}")
-            results.append({'Host': target[0], 'Port': port, 'Version': version, 'CommunityString': community_string, 'OID': oid_read, 'Value': None, 'Status': f"Error: {errorIndication}"})
-        elif errorStatus:
-            if argdebug >= 1: print(f"[d] Error: {errorStatus.prettyPrint()}")
-            results.append({'Host': target[0], 'Port': port, 'Version': version, 'CommunityString': community_string, 'OID': oid_read, 'Value': None, 'Status': f"Error: {errorStatus.prettyPrint()}"})
-        else:
-            print(f"[!] Found '{community_string}' at {target[0]}:{port}/{version}")
-            if not instance or success is True:
-                Target(target[0], target[1], target[2], port, SNMPVersion=version, CommunityString=community_string, Access=True)
-                success = True
-            else:
-                instance.SNMPVersion = version
-                instance.CommunityString = community_string
-                instance.Access = True
-                success = True
-            
-            for varBind in varBinds:
-                results.append({'Host': target[0], 'Port': port, 'Version': version, 'CommunityString': community_string, 'OID': oid_read, 'Value': str(varBind), 'Status': "Success"})
-    
-    if success is False:
-        del instance
-
-    # [{Host, Port, Version, Community, OID, Value, Status}]
-    return results
-
-
-# Function to get instances with a specific attribute value
-def get_instances_with_attribute(instances, attribute_name, attribute_value=None):
-    matching_instances = []
-    for instance in instances:
-        if attribute_value is not None:
-            if hasattr(instance, attribute_name) and getattr(instance, attribute_name) == attribute_value:
-                matching_instances.append(instance)
-        else:
-            if hasattr(instance, attribute_name) and getattr(instance, attribute_name) is not None:
-                matching_instances.append(instance)
-    return matching_instances
-
-# MARK: v3 Login
-async def snmp_v3_get(target, port, timeout, retries, delay, usernames, authpasswords=None, authprotocols=None, privpasswords=None, privprotocols=None, instance=None):
-    # CAUTION:
-    # Usernames/auth/priv-passwords/auth/priv-protocols parameters above are used interchangeably in singular and multiple forms for ease of programming
-    # Also, target may be {FQDN, IP, IPVersion} sometimes pending the relevance of an instance, hence the below standardization
-    if instance and not authpasswords:
-        target = (instance.FQDN, instance.IP, instance.IPVersion)
-    
-    # For username spraying: defined as finding a username in any capacity
-    success = False
-
-    results = []
-    if engine_id:
-        snmpEngine = SnmpEngine(snmpEngineID=OctetString(hexValue=engine_id))
-    else:
-        snmpEngine = SnmpEngine()
-    
-    if target[2] == 'v4' or instance.IPVersion == 'v4':
-        if instance:
-            transport_target = await UdpTransportTarget.create((instance.FQDN, port), timeout, retries)
-        else:
-            transport_target = await UdpTransportTarget.create((target[0], port), timeout, retries)
-    else:
-        if instance:
-            transport_target = await Udp6TransportTarget.create((instance.FQDN, port), timeout, retries)
-        else:
-            transport_target = await Udp6TransportTarget.create((target[0], port), timeout, retries)
-    
-    # Bind to NIC IP address
-    if interface_addr4:
-        transport_target.transportDomain = (interface_addr4, 0)
-    elif interface_addr6:
-        transport_target.transportDomain = (interface_addr6, 0)
-
-    await asyncio.sleep(delay)
-
-    if type(usernames) == list:
-        for username in usernames:
-            if argdebug >= 1: print(f"[d] '{username}' -> {target[0]}:{port}")
-            errorIndication, errorStatus, errorIndex, varBinds = await getCmd(
-                snmpEngine,
-                UsmUserData(userName=username),
-                transport_target,
-                ContextData(),
-                ObjectType(ObjectIdentity(oid_read)) 
-            )
-            if errorIndication:
-                if "Wrong SNMP PDU digest" in str(errorIndication) or "Unsupported SNMP security level" in str(errorIndication):
-                    print(f"[!] Found '{username}' at {target[0]}:{port}")
-
-                    if not instance or success is True:
-                        Target(target[0], target[1], target[2], port, SNMPVersion='v3', Username=username)
-                        success = True
-                    else:
-                        instance.SNMPVersion = 'v3'
-                        instance.Username = username
-                        # Because we are not setting Target.Access = True and it is still false with a Username,
-                        # we tell future processses that NoAuthNoPriv was not sufficient, more is needed.
-                        success = True
-
-                    results.append({'Host': target[0], 'Port': port, 'Version': 'v3', 'Username': username, 'AuthPassword': None, 'AuthProtocol': None, 'PrivPassword': None, 'PrivProtocol': None, 'OID': oid_read, 'Value': None, 'Status': f"User Discovered: {errorIndication}"})
-                else:
-                    if argdebug >= 1: print(f"[d] Error: {errorIndication}")
-                    results.append({'Host': target[0], 'Port': port, 'Version': 'v3', 'Username': username, 'AuthPassword': None, 'AuthProtocol': None, 'PrivPassword': None, 'PrivProtocol': None, 'OID': oid_read, 'Value': None, 'Status': f"Error: {errorIndication}"})
-            elif errorStatus:
-                if argdebug >= 1: print(f"[d] Error: {errorStatus.prettyPrint()}")
-                results.append({'Host': target[0], 'Port': port, 'Version': 'v3', 'Username': username, 'AuthPassword': None, 'AuthProtocol': None, 'PrivPassword': None, 'PrivProtocol': None, 'OID': oid_read, 'Value': None, 'Status': f"Error: {errorStatus.prettyPrint()}"})
-            else:
-                print(f"[!] Found '{username}' at {target[0]}:{port}")
-                if not instance or success is True:
-                    Target(target[0], target[1], target[2], port, SNMPVersion='v3', Username=username, Access=True)
-                    success = True
-                else:
-                    instance.SNMPVersion = 'v3'
-                    instance.Username = username
-                    instance.Access = True
-                    success = True
-
-                for varBind in varBinds:
-                    if argdebug >= 1: print(f"[d] Success: {varBind}")
-                    results.append({'Host': target[0], 'Port': port, 'Version': 'v3', 'Username': username, 'AuthPassword': None, 'AuthProtocol': None, 'PrivPassword': None, 'PrivProtocol': None, 'OID': oid_read, 'Value': str(varBind), 'Status': "Success"})
-    
-    elif not privpasswords: # MARK: #v3-Auth
-        for password in authpasswords:
-            for protocol in authprotocols:
-                if argdebug >= 1: print(f"[d] '{usernames}/{password}/{protocol['Name']}' -> {target}:{port}")
-                errorIndication, errorStatus, errorIndex, varBinds = await getCmd(
-                    snmpEngine,
-                    UsmUserData(userName=usernames, authKey=password, authProtocol=protocol['Class']),
-                    transport_target,
-                    ContextData(),
-                    ObjectType(ObjectIdentity(oid_read))
-                )
-                if errorIndication:
-                    if "Wrong SNMP PDU digest" in str(errorIndication):
-                        results.append({'Host': target, 'Port': port, 'Version': 'v3', 'Username': usernames, 'AuthPassword': password, 'AuthProtocol': protocol['Name'], 'PrivPassword': None, 'PrivProtocol': None, 'OID': oid_read, 'Value': None, 'Status': f"Wrong Pwd/Algo: {errorIndication}"})
-                    elif "Unsupported SNMP security level" in str(errorIndication):
-                        print(f"[!] Found '{usernames}/{password}/{protocol['Name']}' at {target}:{port}, but need Privacy")
-                        results.append({'Host': target, 'Port': port, 'Version': 'v3', 'Username': usernames, 'AuthPassword': password, 'AuthProtocol': protocol['Name'], 'PrivPassword': None, 'PrivProtocol': None, 'OID': oid_read, 'Value': None, 'Status': f"Correct Auth, But Need Privacy: {errorIndication}"})
-                        
-                        instance.AuthPwd = password
-                        instance.AuthProto = protocol
-                        # No reason to keep auth guessing if the authpwd has been guessed
-                        return results
-                    else:
-                        results.append({'Host': target, 'Port': port, 'Version': 'v3', 'Username': usernames, 'AuthPassword': password, 'AuthProtocol': protocol['Name'], 'PrivPassword': None, 'PrivProtocol': None, 'OID': oid_read, 'Value': None, 'Status': f"Error: {errorIndication}"})
-                elif errorStatus:
-                    if argdebug >= 1: print(f"[d] Error: {errorStatus.prettyPrint()}")
-                    results.append({'Host': target, 'Port': port, 'Version': 'v3', 'Username': usernames, 'AuthPassword': password, 'AuthProtocol': protocol['Name'], 'PrivPassword': None, 'PrivProtocol': None, 'OID': oid_read, 'Value': None, 'Status': f"Error: {errorStatus.prettyPrint()}"})
-                else:
-                    print(f"[!] Found '{usernames}/{password}/{protocol['Name']}' at {target}:{port}")
-                    instance.AuthPwd = password
-                    instance.AuthProto = protocol
-                    instance.Access = True
-
-                    for varBind in varBinds:
-                        if argdebug >= 1: print(f"[d] Success: {varBind}")
-                        results.append({'Host': target, 'Port': port, 'Version': 'v3', 'Username': usernames, 'AuthPassword': password, 'AuthProtocol': protocol['Name'], 'PrivPassword': None, 'PrivProtocol': None, 'OID': oid_read, 'Value': str(varBind), 'Status': "Success"})
-                    # No reason to keep auth guessing if the authpwd has been guessed
-                    return results
-    
-    else: # MARK: #v3-Priv
-        for password in privpasswords:
-            for protocol in privprotocols:
-                if argdebug >= 1: print(f"[d] '{usernames}/{authpasswords}/{authprotocols['Name']}/{password}/{protocol['Name']}' -> {target}:{port}")
-                errorIndication, errorStatus, errorIndex, varBinds = await getCmd(
-                    snmpEngine,
-                    UsmUserData(userName=usernames, authKey=authpasswords, authProtocol=authprotocols['Class'], privKey=password, privProtocol=protocol['Class']),
-                    transport_target,
-                    ContextData(),
-                    ObjectType(ObjectIdentity(oid_read))
-                )
-
-                if errorIndication:
-                    results.append({'Host': target, 'Port': port, 'Version': 'v3', 'Username': usernames, 'AuthPassword': authpasswords, 'AuthProtocol': authprotocols['Name'], 'PrivPassword': password, 'PrivProtocol': protocol['Name'], 'OID': oid_read, 'Value': None, 'Status': f"Error: {errorIndication}"})
-                elif errorStatus:
-                    if argdebug >= 1: print(f"[d] Error: {errorStatus.prettyPrint()}")
-                    results.append({'Host': target, 'Port': port, 'Version': 'v3', 'Username': usernames, 'AuthPassword': authpasswords, 'AuthProtocol': authprotocols['Name'], 'PrivPassword': password, 'PrivProtocol': protocol['Name'], 'OID': oid_read, 'Value': None, 'Status': f"Error: {errorStatus.prettyPrint()}"})
-                else:
-                    print(f"[!] Found '{usernames}/{authpasswords}/{authprotocols['Name']}/{password}/{protocol['Name']}' at {target}:{port}")
-                    instance.PrivPwd = password
-                    instance.PrivProto = protocol
-                    instance.Access = True
-
-                    for varBind in varBinds:
-                        if argdebug >= 1: print(f"[d] Success: {varBind}")
-                        results.append({'Host': target, 'Port': port, 'Version': 'v3', 'Username': usernames, 'AuthPassword': authpasswords, 'AuthProtocol': authprotocols['Name'], 'PrivPassword': password, 'PrivProtocol': protocol['Name'], 'OID': oid_read, 'Value': str(varBind), 'Status': "Success"})
-                    # No reason to keep auth guessing if the privpwd has been guessed
-                    return results
-    return results
-
-
-# MARK: v1/2c bulkwalk
-async def snmp_v12c_bulkwalk(instance, timeout, retries, delay):
-    results = []
-    if engine_id:
-        snmpEngine = SnmpEngine(snmpEngineID=OctetString(hexValue=engine_id))
-    else:
-        snmpEngine = SnmpEngine()
-    
-    if instance.IPVersion == 'v4':
-        transport_target = await UdpTransportTarget.create((instance.FQDN, instance.Port), timeout, retries)
-    else:
-        transport_target = await Udp6TransportTarget.create((instance.FQDN, instance.Port), timeout, retries)
-    
-    # Bind to NIC IP address
-    if interface_addr4:
-        transport_target.transportDomain = (interface_addr4, 0)
-    elif interface_addr6:
-        transport_target.transportDomain = (interface_addr6, 0)
-
-    await asyncio.sleep(delay)
-
-    if instance.SNMPVersion == 'v1':
-        mpModel = 0
-        print("[i] Skipping a v1 instance due to lack of bulkwalk compatibility [COMING SOON!]")
-        return None
-    else:
-        mpModel = 1
-        if argdebug >= 1: print(f"[d] '{instance.CommunityString}' -> {instance.FQDN}:{instance.Port}/{instance.SNMPVersion}")
-
-    start_varBindType = ObjectType(ObjectIdentity('1.3.6.1.2.1')) # The start of SNMP MIB
-    initialOID = rfc1902.ObjectName("1.3.6.1.2.1")
-
-    while start_varBindType:
-        errorIndication, errorStatus, errorIndex, varBindTable = await bulkCmd(
-            snmpEngine,
-            CommunityData(instance.CommunityString, mpModel=mpModel),
-            transport_target,
-            ContextData(),
-            0, 50,
-            start_varBindType,
-            lookupMib=False
-        )
-
-        if errorIndication:
-            #print(errorIndication)
-            results.append({'Host': instance.FQDN, 'Port': instance.Port, 'Version': instance.SNMPVersion, 'CommunityString': instance.CommunityString, 'OID': None, 'Value': None, 'Status': f"Error: {errorIndication}"})
-            break
-        elif errorStatus:
-            if argdebug >= 1: print(f"[d] Error: {errorStatus.prettyPrint()}")
-            results.append({'Host': instance.FQDN, 'Port': instance.Port, 'Version': instance.SNMPVersion, 'CommunityString': instance.CommunityString, 'OID': None, 'Value': None, 'Status': f"Error: {errorStatus.prettyPrint()}"})
-        else:
-            #print(f"[!] Found data at '{instance.FQDN}:{instance.Port}/{instance.SNMPVersion}/{instance.Username}")
-            for varBindRow in varBindTable:
-                #print(f"{varBindRow[0]} {varBindRow[1]}")
-                results.append({'Host': instance.FQDN, 'Port': instance.Port, 'Version': instance.SNMPVersion, 'CommunityString': instance.CommunityString, 'OID': str(varBindRow[0]), 'Value': str(varBindRow[1]), 'Status': "Success"})
-                
-            if varBindRow[1].tagSet == EndOfMibView.tagSet or initialOID.isPrefixOf(varBindTable[-1][0]):
-                break
-
-    return results
-
-
-# MARK: v3 bulkwalk
-async def snmp_v3_bulkwalk(instance, timeout, retries, delay):
-    results = []
-    if engine_id:
-        snmpEngine = SnmpEngine(snmpEngineID=OctetString(hexValue=engine_id))
-    else:
-        snmpEngine = SnmpEngine()
-    
-    if instance.IPVersion == 'v4':
-        transport_target = await UdpTransportTarget.create((instance.FQDN, instance.Port), timeout, retries)
-    else:
-        transport_target = await Udp6TransportTarget.create((instance.FQDN, instance.Port), timeout, retries)
-    
-    # Bind to NIC IP address
-    if interface_addr4:
-        transport_target.transportDomain = (interface_addr4, 0)
-    elif interface_addr6:
-        transport_target.transportDomain = (interface_addr6, 0)
-
-    await asyncio.sleep(delay)
-
-    if instance.PrivProto:
-        if argdebug >= 1: print(f"[d] '{instance.Username}/{instance.AuthPwd}/{instance.AuthProto['Name']}/{instance.PrivPwd}/{instance.PrivProto['Name']}' -> {instance.FQDN}:{instance.Port}")
-        usmuserdata = UsmUserData(userName=instance.Username, authKey=instance.AuthPwd, authProtocol=instance.AuthProto['Class'], privKey=instance.PrivPwd, privProtocol=instance.PrivProto['Class'])
-    elif instance.AuthProto:
-        if argdebug >= 1: print(f"[d] '{instance.Username}/{instance.AuthPwd}/{instance.AuthProto['Name']}' -> {instance.FQDN}:{instance.Port}")
-        usmuserdata = UsmUserData(userName=instance.Username, authKey=instance.AuthPwd, authProtocol=instance.AuthProto['Class'])
-    else:
-        if argdebug >= 1: print(f"[d] '{instance.Username}' -> {instance.FQDN}:{instance.Port}")
-        usmuserdata = UsmUserData(userName=instance.Username)
-
-    start_varBindType = ObjectType(ObjectIdentity('1.3.6.1.2.1')) # The start of SNMP MIB
-    initialOID = rfc1902.ObjectName("1.3.6.1.2.1")
-
-    while start_varBindType:
-        errorIndication, errorStatus, errorIndex, varBindTable = await bulkCmd(
-            snmpEngine,
-            usmuserdata,
-            transport_target,
-            ContextData(),
-            0, 50,
-            start_varBindType,
-            lookupMib=False
-        )
-
-        if errorIndication:
-            #print(errorIndication)
-            if instance.PrivProto:
-                results.append({'Host': instance.FQDN, 'Port': instance.Port, 'Username': instance.Username, 'AuthPassword': instance.AuthPwd, 'AuthProtocol': instance.AuthProto['Name'], 'PrivPassword': instance.PrivPwd, 'PrivProtocol': instance.PrivProto['Name'], 'OID': None, 'Value': None, 'Status': f"Error: {errorIndication}"})
-            
-            elif instance.AuthProto:
-                results.append({'Host': instance.FQDN, 'Port': instance.Port, 'Username': instance.Username, 'AuthPassword': instance.AuthPwd, 'AuthProtocol': instance.AuthProto['Name'], 'PrivPassword': None, 'PrivProtocol': None, 'OID': None, 'Value': None, 'Status': f"Error: {errorIndication}"})
-            else:
-                results.append({'Host': instance.FQDN, 'Port': instance.Port, 'Username': instance.Username, 'AuthPassword': None, 'AuthProtocol': None, 'PrivPassword': None, 'PrivProtocol': None, 'OID': None, 'Value': None, 'Status': f"Error: {errorIndication}"})
-            break
-        elif errorStatus:
-            if argdebug >= 1: print(f"[d] Error: {errorStatus.prettyPrint()}")
-            if instance.PrivProto:
-                results.append({'Host': instance.FQDN, 'Port': instance.Port, 'Username': instance.Username, 'AuthPassword': instance.AuthPwd, 'AuthProtocol': instance.AuthProto['Name'], 'PrivPassword': instance.PrivPwd, 'PrivProtocol': instance.PrivProto['Name'], 'OID': None, 'Value': None, 'Status': f"Error: {errorStatus.prettyPrint()}"})
-            
-            elif instance.AuthProto:
-                results.append({'Host': instance.FQDN, 'Port': instance.Port, 'Username': instance.Username, 'AuthPassword': instance.AuthPwd, 'AuthProtocol': instance.AuthProto['Name'], 'PrivPassword': None, 'PrivProtocol': None, 'OID': None, 'Value': None, 'Status': f"Error: {errorStatus.prettyPrint()}"})
-            else:
-                results.append({'Host': instance.FQDN, 'Port': instance.Port, 'Username': instance.Username, 'AuthPassword': None, 'AuthProtocol': None, 'PrivPassword': None, 'PrivProtocol': None, 'OID': None, 'Value': None, 'Status': f"Error: {errorStatus.prettyPrint()}"})
-        else:
-            #print(f"[!] Found data at '{instance.FQDN}:{instance.Port}/{instance.SNMPVersion}/{instance.Username}")
-            for varBindRow in varBindTable:
-                if instance.PrivProto:
-                    #print(f"{varBindRow[0]} {varBindRow[1]}")
-                    results.append({'Host': instance.FQDN, 'Port': instance.Port, 'Username': instance.Username, 'AuthPassword': instance.AuthPwd, 'AuthProtocol': instance.AuthProto['Name'], 'PrivPassword': instance.PrivPwd, 'PrivProtocol': instance.PrivProto['Name'], 'OID': str(varBindRow[0]), 'Value': str(varBindRow[1]), 'Status': "Success"})
-                elif instance.AuthProto:
-                    #print(f"{varBindRow[0]} {varBindRow[1]}")
-                    results.append({'Host': instance.FQDN, 'Port': instance.Port, 'Username': instance.Username, 'AuthPassword': instance.AuthPwd, 'AuthProtocol': instance.AuthProto['Name'], 'PrivPassword': None, 'PrivProtocol': None, 'OID': str(varBindRow[0]), 'Value': str(varBindRow[1]), 'Status': "Success"})
-                else:
-                    #print(f"{varBindRow[0]} {varBindRow[1]}")
-                    results.append({'Host': instance.FQDN, 'Port': instance.Port, 'Username': instance.Username, 'AuthPassword': None, 'AuthProtocol': None, 'PrivPassword': None, 'PrivProtocol': None, 'OID': str(varBindRow[0]), 'Value': str(varBindRow[1]), 'Status': "Success"})
-                
-            if varBindRow[1].tagSet == EndOfMibView.tagSet or initialOID.isPrefixOf(varBindTable[-1][0]):
-                break
-
-    return results
 
 
 # MARK: Main
@@ -530,6 +117,7 @@ async def main():
     io_group.add_argument('-rt', '--retries', type=int, default=0, help='Retries count')
     io_group.add_argument('-dl', '--delay', type=float, default=0.7, help='Seconds delay between each request')
     io_group.add_argument('-or', '--oid-read', type=str, default='1.3.6.1.2.1.1.1.0', help='OID the Spray module will read (default is sysDescr.0)')
+    #io_group.add_argument('-td', '--threads', type=int, default=10, help='Number of concurrent "threads" (via semaphore)')
     #io_group.add_argument('-ow', '--oid-write', type=str, default='', help='')
 
     argcomplete.autocomplete(parser)
@@ -547,9 +135,9 @@ async def main():
 
     # Tier 2 debugging
     if args.debug >= 0:
-        global argdebug
+        # argdebug is an inter-file global variable within _modules/config.py
         argdebug = args.debug
-    if argdebug == 2: debug.setLogger(debug.Debug('secmod', 'msgproc'))
+    #if argdebug == 2: debug.setLogger(debug.Debug('secmod', 'msgproc'))
 
     # MARK: Exception Checks
     if not args.target:
@@ -577,9 +165,6 @@ async def main():
         quit()
 
     # Check interface existance and compatibility
-    global interface_addr4, interface_addr6
-    interface_addr4 = None
-    interface_addr6 = None
     if args.interface:
         # Get network interface addresses
         interfaces = psutil.net_if_addrs()
@@ -589,8 +174,10 @@ async def main():
             if interface_name.lower() == (args.interface).lower():
                 for address in addresses: # Single interface could have both an IPv4 and IPv6 address, or sadly multiple of each
                     if any('v4' in tup for tup in resolved_targets) and address.family == AF_INET:
+                        # interface_addr4 is an inter-file global variable within _modules/config.py
                         interface_addr4 = address.address
                     elif any('v6' in tup for tup in resolved_targets) and address.family == AF_INET6:
+                        # interface_addr6 is an inter-file global variable within _modules/config.py
                         interface_addr6 = address.address
         if not interface_addr4 and not interface_addr6:
             print("[e] Provided interface not found. Interfaces found:")
@@ -655,7 +242,7 @@ async def main():
         print("[e] The agent engine ID must start with '0x'.")
         quit()
     else:
-        global engine_id
+        # engine_id is an inter-file global variable within _modules/config.py
         engine_id = args.engine_id
 
     # Map custom auth protocol to Name/Class
@@ -734,14 +321,14 @@ async def main():
                 if argdebug >= 1: print(f"[d] Using the existing ({len(Target.get_instances())}) instances")
                 
                 for instance in Target.get_instances():
-                    tasks.append(asyncio.create_task(snmp_v12c_get(instance.FQDN, instance.port, 'v1', args.timeout, args.retries, args.delay, community_strings, instance=instance)))
-                    tasks.append(asyncio.create_task(snmp_v12c_get(instance.FQDN, instance.port, 'v2c', args.timeout, args.retries, args.delay, community_strings, instance=instance)))
+                    tasks.append(asyncio.create_task(snmp_v12c_get_multi(instance.FQDN, instance.port, 'v1', args.timeout, args.retries, args.delay, community_strings, instance=instance)))
+                    tasks.append(asyncio.create_task(snmp_v12c_get_multi(instance.FQDN, instance.port, 'v2c', args.timeout, args.retries, args.delay, community_strings, instance=instance)))
 
             else:
                 for target in resolved_targets:
                     for port in ports:
-                        tasks.append(asyncio.create_task(snmp_v12c_get(target, port, 'v1', args.timeout, args.retries, args.delay, community_strings)))
-                        tasks.append(asyncio.create_task(snmp_v12c_get(target, port, 'v2c', args.timeout, args.retries, args.delay, community_strings)))
+                        tasks.append(asyncio.create_task(snmp_v12c_get_multi(target, port, 'v1', args.timeout, args.retries, args.delay, community_strings)))
+                        tasks.append(asyncio.create_task(snmp_v12c_get_multi(target, port, 'v2c', args.timeout, args.retries, args.delay, community_strings)))
             
             outputfile = args.output + 'v12c_Spray_Community_Strings.csv'
             if not exists(outputfile):
@@ -777,11 +364,11 @@ async def main():
             if instances:
                 if argdebug >= 1: print(f"[d] Using the relevant ({len(instances)}) instances")
                 for instance in instances:
-                    tasks.append(asyncio.create_task(snmp_v3_get(instance.FQDN, instance.Port, args.timeout, args.retries, args.delay, usernames, instance=instance)))
+                    tasks.append(asyncio.create_task(snmp_v3_get_multi(instance.FQDN, instance.Port, args.timeout, args.retries, args.delay, usernames, instance=instance)))
             else:
                 for target in resolved_targets:
                     for port in ports:
-                        tasks.append(asyncio.create_task(snmp_v3_get(target, port, args.timeout, args.retries, args.delay, usernames)))
+                        tasks.append(asyncio.create_task(snmp_v3_get_multi(target, port, args.timeout, args.retries, args.delay, usernames)))
             
             outputfile = args.output + 'v3_Spray_Credentials.csv'
             if not exists(outputfile):
@@ -819,7 +406,7 @@ async def main():
             if argdebug >= 1: print(f"[d] Using the relevant ({len(instances)}) instances")
 
             for instance in instances:
-                tasks.append(asyncio.create_task(snmp_v3_get(instance.FQDN, instance.Port, args.timeout, args.retries, args.delay, instance.Username, authpasswords=passwords, authprotocols=auth_protocols, instance=instance)))
+                tasks.append(asyncio.create_task(snmp_v3_get_multi(instance.FQDN, instance.Port, args.timeout, args.retries, args.delay, instance.Username, authpasswords=passwords, authprotocols=auth_protocols, instance=instance)))
 
             # Wait for auth spraying to finish
             try:
@@ -853,7 +440,7 @@ async def main():
                 task_results = []
                 if argdebug >= 1: print(f"[d] Using the relevant ({len(instances)}) instances")
                 for instance in instances:
-                    tasks.append(asyncio.create_task(snmp_v3_get(instance.FQDN, instance.Port, args.timeout, args.retries, args.delay, instance.Username, authpasswords=instance.AuthPwd, authprotocols=instance.AuthProto, privpasswords=passwords, privprotocols=priv_protocols, instance=instance)))
+                    tasks.append(asyncio.create_task(snmp_v3_get_multi(instance.FQDN, instance.Port, args.timeout, args.retries, args.delay, instance.Username, authpasswords=instance.AuthPwd, authprotocols=instance.AuthProto, privpasswords=passwords, privprotocols=priv_protocols, instance=instance)))
 
                 # Wait for AuthPriv spraying to finish
                 try:

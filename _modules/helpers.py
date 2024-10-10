@@ -70,3 +70,16 @@ async def parse_ports(ports):
         else:
             port_list.append(int(part))
     return port_list
+
+
+# Function to get instances with a specific attribute value
+def get_instances_with_attribute(instances, attribute_name, attribute_value=None):
+    matching_instances = []
+    for instance in instances:
+        if attribute_value is not None:
+            if hasattr(instance, attribute_name) and getattr(instance, attribute_name) == attribute_value:
+                matching_instances.append(instance)
+        else:
+            if hasattr(instance, attribute_name) and getattr(instance, attribute_name) is not None:
+                matching_instances.append(instance)
+    return matching_instances
