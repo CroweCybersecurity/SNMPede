@@ -105,16 +105,17 @@ async def main():
     io_group.add_argument('-eid', '--engine-id', type=str, help='Specify a hex agent engine ID (e.g., 0x80000000011234567890abcdef)')
     io_group.add_argument('-o', '--output', type=str, default='SNMPede_', help='CSV prepended output filename/path')
     io_group.add_argument('-d', '--debug', type=int, default=0, choices=[0, 1, 2], help='Debug level to stdout')
-    io_group.add_argument('-to', '--timeout', type=float, default=3, help='Timeout seconds')
+    io_group.add_argument('-to', '--timeout', type=float, default=7, help='Timeout seconds')
     io_group.add_argument('-rt', '--retries', type=int, default=0, help='Retries count')
     io_group.add_argument('-dl', '--delay', type=float, default=0.7, help='Seconds delay between each request')
     io_group.add_argument('-or', '--oid-read', type=str, default='1.3.6.1.2.1.1.1.0', help='OID the Spray module will read (default is sysDescr.0)')
-    #io_group.add_argument('-td', '--threads', type=int, default=10, help='Number of concurrent "threads" (via semaphore)')
+    io_group.add_argument('-tk', '--tasks', type=int, default=10, help='Number of concurrent tasks')
     #io_group.add_argument('-ow', '--oid-write', type=str, default='', help='')
 
     argcomplete.autocomplete(parser)
     args = parser.parse_args()
     Target_instances = []
+    semaphore = asyncio.Semaphore(args.tasks)
     await asyncio.sleep(0.2)
 
     ascii_art = """
@@ -309,30 +310,47 @@ async def main():
             tasks = []
             task_results = []
             
-            # Doing async like this so that we don't DDOS a specific SNMP agent
+            # Perform v1 community string spraying
             if len(Target_instances) > 0:
                 if config.ARGDEBUG >= 1: print(f"[d] Using the existing ({len(Target_instances)}) instances")
-                
-                for instance in Target_instances:
-                    tasks.append(asyncio.create_task(snmp_v12c_get_multi((instance.FQDN, instance.IP, instance.IPVersion), instance.port, 'v1', community_strings, instance=instance)))
-                    tasks.append(asyncio.create_task(snmp_v12c_get_multi((instance.FQDN, instance.IP, instance.IPVersion), instance.port, 'v2c', community_strings, instance=instance)))
-
+                for id, instance in enumerate(Target_instances):
+                    tasks.append(asyncio.create_task(snmp_v12c_get_multi(semaphore, id, (instance.FQDN, instance.IP, instance.IPVersion), instance.port, 'v1', community_strings, instance=instance)))
             else:
+                id = 0
                 for target in resolved_targets:
                     for port in ports:
-                        tasks.append(asyncio.create_task(snmp_v12c_get_multi(target, port, 'v1', community_strings)))
-                        tasks.append(asyncio.create_task(snmp_v12c_get_multi(target, port, 'v2c', community_strings)))
+                        tasks.append(asyncio.create_task(snmp_v12c_get_multi(semaphore, id, target, port, 'v1', community_strings)))
+                        id = id + 1
             
-            outputfile = args.output + 'v12c_Spray_Community_Strings.csv'
-            if not exists(outputfile):
-                write_fieldnames(outputfile, 'Host,Port,Version,CommunityString,OID,Value,Status\n')
-
-            # Wait for community string spraying to finish
+            # Wait for community string v1 spraying to finish before beginning v2c
             try:
                 task_results.extend(await asyncio.gather(*tasks))
             except Exception as e:
-                print(f"[e] A community string spraying error occurred: {e}")
+                print(f"[e] A v1 community string spraying error occurred: {e}")
                 quit()
+
+            # Perform v2c community string spraying
+            task_results = []
+            if len(Target_instances) > 0:
+                for id, instance in enumerate(Target_instances):
+                    tasks.append(asyncio.create_task(snmp_v12c_get_multi(semaphore, id, (instance.FQDN, instance.IP, instance.IPVersion), instance.port, 'v2c', community_strings, instance=instance)))
+            else:
+                id = 0
+                for target in resolved_targets:
+                    for port in ports:
+                        tasks.append(asyncio.create_task(snmp_v12c_get_multi(semaphore, id, target, port, 'v2c', community_strings)))
+                        id = id + 1
+            
+            # Wait for community string v2c spraying to finish
+            try:
+                task_results.extend(await asyncio.gather(*tasks))
+            except Exception as e:
+                print(f"[e] A v2c community string spraying error occurred: {e}")
+                quit()
+
+            outputfile = args.output + 'v12c_Spray_Community_Strings.csv'
+            if not exists(outputfile):
+                write_fieldnames(outputfile, 'Host,Port,Version,CommunityString,OID,Value,Status\n')
 
             print("[-] Writing results...")
             for r, instances in task_results:
@@ -354,16 +372,17 @@ async def main():
             tasks = []
             task_results = []
             
-            # Doing async like this so that we don't DDOS a specific SNMP agent
             instances = get_instances_with_attribute(Target_instances, 'Access', False)
             if instances:
                 if config.ARGDEBUG >= 1: print(f"[d] Using the relevant ({len(instances)}) instances")
-                for instance in instances:
-                    tasks.append(asyncio.create_task(snmp_v3_get_multi((instance.FQDN, instance.IP, instance.IPVersion), instance.Port, usernames, instance=instance)))
+                for id, instance in enumerate(Target_instances):
+                    tasks.append(asyncio.create_task(snmp_v3_get_multi(semaphore, id, (instance.FQDN, instance.IP, instance.IPVersion), instance.Port, usernames, instance=instance)))
             else:
+                id = 0
                 for target in resolved_targets:
                     for port in ports:
-                        tasks.append(asyncio.create_task(snmp_v3_get_multi((instance.FQDN, instance.IP, instance.IPVersion), port, usernames)))
+                        tasks.append(asyncio.create_task(snmp_v3_get_multi(semaphore, id, (instance.FQDN, instance.IP, instance.IPVersion), port, usernames)))
+                        id = id + 1
             
             outputfile = args.output + 'v3_Spray_Credentials.csv'
             if not exists(outputfile):
@@ -398,15 +417,14 @@ async def main():
             tasks = []
             task_results = []
             
-            # Doing async like this so that we don't DDOS a specific SNMP agent
             # Filter for any unfinished targets
             instances = get_instances_with_attribute(Target_instances, 'Access', False)
             # Filter for those with Username not None
             instances = get_instances_with_attribute(instances, 'Username')
             if config.ARGDEBUG >= 1: print(f"[d] Using the relevant ({len(instances)}) instances")
 
-            for instance in instances:
-                tasks.append(asyncio.create_task(snmp_v3_get_multi((instance.FQDN, instance.IP, instance.IPVersion), instance.Port, instance.Username, authpasswords=passwords, authprotocols=auth_protocols, instance=instance)))
+            for id, instance in enumerate(instances):
+                tasks.append(asyncio.create_task(snmp_v3_get_multi(semaphore, id, (instance.FQDN, instance.IP, instance.IPVersion), instance.Port, instance.Username, authpasswords=passwords, authprotocols=auth_protocols, instance=instance)))
 
             # Wait for auth spraying to finish
             try:
@@ -437,8 +455,8 @@ async def main():
                 tasks = []
                 task_results = []
                 if config.ARGDEBUG >= 1: print(f"[d] Using the relevant ({len(instances)}) instances")
-                for instance in instances:
-                    tasks.append(asyncio.create_task(snmp_v3_get_multi((instance.FQDN, instance.IP, instance.IPVersion), instance.Port, instance.Username, authpasswords=instance.AuthPwd, authprotocols=instance.AuthProto, privpasswords=passwords, privprotocols=priv_protocols, instance=instance)))
+                for id, instance in enumerate(instances):
+                    tasks.append(asyncio.create_task(snmp_v3_get_multi(semaphore, id, (instance.FQDN, instance.IP, instance.IPVersion), instance.Port, instance.Username, authpasswords=instance.AuthPwd, authprotocols=instance.AuthProto, privpasswords=passwords, privprotocols=priv_protocols, instance=instance)))
 
                 # Wait for AuthPriv spraying to finish
                 try:
@@ -478,9 +496,9 @@ async def main():
                 task_results = []
                 print("[i] Walking in bulk v1/2c information...")
                 if config.ARGDEBUG >= 1: print(f"[d] Using the relevant ({len(instances)}) v1/2c instances")
-                for instance in instances:
+                for id, instance in enumerate(instances):
                     if config.ARGDEBUG >= 1: print(instance)
-                    tasks.append(asyncio.create_task(snmp_v12c_bulkwalk(instance)))
+                    tasks.append(asyncio.create_task(snmp_v12c_bulkwalk(semaphore, id, instance)))
             
                 outputfile = args.output + 'v12c_BulkWalk.csv'
                 if not exists(outputfile):
@@ -503,9 +521,9 @@ async def main():
                 task_results = []
                 print("[i] Walking in bulk v3 information...")
                 if config.ARGDEBUG >= 1: print(f"[d] Using the relevant ({len(instances)}) v3 instances")
-                for instance in instances:
+                for id, instance in enumerate(instances):
                     if config.ARGDEBUG >= 1: print(instance)
-                    tasks.append(asyncio.create_task(snmp_v3_bulkwalk(instance)))
+                    tasks.append(asyncio.create_task(snmp_v3_bulkwalk(semaphore, id, instance)))
             
                 outputfile = args.output + 'v3_BulkWalk.csv'
                 if not exists(outputfile):
