@@ -14,9 +14,8 @@ The following features are built into SNMPede:
 - BulkWalk of entire SNMP agents (v2c/v3)
 
 ```cmd
-usage: SNMPede.py [-h] [--spray] [--write] [--bulkwalk] [--all] [-c COMMUNITY] [-u USERNAME] [-p PASSWORD]
-                  [-ap {ANY,HMACMD5,HMACSHA,HMAC128SHA224,HMAC192SHA256,HMAC256SHA384,HMAC384SHA512}] [-pp {ANY,DES,AESCFB128,AESCFB192,AESCFB256}] [-or config.OID_READ]
-                  [-ow OID_WRITE] [-we] [-wn WRITE_NEW] [-t TARGET] [-pt PORT] [-i INTERFACE] [-eid config.ENGINE_ID] [-o OUTPUT] [-d {0,1,2}] [-to TIMEOUT] [-rt RETRIES] [-dl DELAY]
+usage: SNMPede.py [-h] [--spray] [--bulkwalk] [--all] [-c COMMUNITY] [-u USERNAME] [-p PASSWORD] [-ap {ANY,HMACMD5,HMACSHA,HMAC128SHA224,HMAC192SHA256,HMAC256SHA384,HMAC384SHA512}] [-pp {ANY,DES,AESCFB128,AESCFB192,AESCFB256}] [-t TARGET]
+                  [-pt PORT] [-i INTERFACE] [-eid ENGINE_ID] [-o OUTPUT] [-d {0,1,2}] [-to TIMEOUT] [-rt RETRIES] [-dl DELAY] [-or OID_READ] [-tk TASKS]
 
 A modern and intelligent approach to SNMP hacking
 
@@ -25,9 +24,8 @@ optional arguments:
 
 Modules:
   --spray               Spray any provided community strings, credentials (user/pass), and combos
-  --write               Check if write access is possible
   --bulkwalk            Collect as much information as possible
-  --all                 CAUTION: Use all modules
+  --all                 CAUTION: Use all above modules
 
 Spray Arguments:
   -c COMMUNITY, --community COMMUNITY
@@ -36,20 +34,10 @@ Spray Arguments:
                         Singular username or file containing line-delimited usernames
   -p PASSWORD, --password PASSWORD
                         Singular password or file containing line-delimited passwords
-  -ap {ANY,HMACMD5,HMACSHA,HMAC128SHA224,HMAC192SHA256,HMAC256SHA384,HMAC384SHA512}, --auth-proto {ANY,HMACMD5,HMACSHA,HMAC128SHA224,HMAC192SHA256,HMAC256SHA384,HMAC384SHA512}    
+  -ap {ANY,HMACMD5,HMACSHA,HMAC128SHA224,HMAC192SHA256,HMAC256SHA384,HMAC384SHA512}, --auth-proto {ANY,HMACMD5,HMACSHA,HMAC128SHA224,HMAC192SHA256,HMAC256SHA384,HMAC384SHA512}
                         Singular authentication protocol or try any of them
   -pp {ANY,DES,AESCFB128,AESCFB192,AESCFB256}, --priv-proto {ANY,DES,AESCFB128,AESCFB192,AESCFB256}
                         Singular privacy protocol or try any of them
-  -or config.OID_READ, --oid-read config.OID_READ
-                        OID the Spray module will read (default is sysDescr.0)
-
-Write Arguments:
-  -ow OID_WRITE, --oid-write OID_WRITE
-                        OID to attempt writing a value (default is SNMPv2-MIB::sysORDescr.1)
-  -we, --write-existing
-                        Query the OID and attempt to write the existing OID value again
-  -wn WRITE_NEW, --write-new WRITE_NEW
-                        CAUTION: Query the OID and write a custom OID value provided here
 
 I/O Arguments:
   -t TARGET, --target TARGET
@@ -58,7 +46,7 @@ I/O Arguments:
                         Target port/range (e.g., 161 or 161,162 or 160-165)
   -i INTERFACE, --interface INTERFACE
                         Specify network interface (e.g., eth0, Ethernet0)
-  -eid config.ENGINE_ID, --engine-id config.ENGINE_ID
+  -eid ENGINE_ID, --engine-id ENGINE_ID
                         Specify a hex agent engine ID (e.g., 0x80000000011234567890abcdef)
   -o OUTPUT, --output OUTPUT
                         CSV prepended output filename/path
@@ -70,6 +58,10 @@ I/O Arguments:
                         Retries count
   -dl DELAY, --delay DELAY
                         Seconds delay between each request
+  -or OID_READ, --oid-read OID_READ
+                        OID the Spray module will read (default is sysDescr.0)
+  -tk TASKS, --tasks TASKS
+                        Number of concurrent tasks
 ```
 
 ## Installation
