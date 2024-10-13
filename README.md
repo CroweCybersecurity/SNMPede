@@ -15,8 +15,8 @@ The following features are built into SNMPede:
 
 ```cmd
 usage: SNMPede.py [-h] [--spray] [--write] [--bulkwalk] [--all] [-c COMMUNITY] [-u USERNAME] [-p PASSWORD]
-                  [-ap {ANY,HMACMD5,HMACSHA,HMAC128SHA224,HMAC192SHA256,HMAC256SHA384,HMAC384SHA512}] [-pp {ANY,DES,AESCFB128,AESCFB192,AESCFB256}] [-or OID_READ]
-                  [-ow OID_WRITE] [-we] [-wn WRITE_NEW] [-t TARGET] [-pt PORT] [-i INTERFACE] [-eid ENGINE_ID] [-o OUTPUT] [-d {0,1,2}] [-to TIMEOUT] [-rt RETRIES] [-dl DELAY]
+                  [-ap {ANY,HMACMD5,HMACSHA,HMAC128SHA224,HMAC192SHA256,HMAC256SHA384,HMAC384SHA512}] [-pp {ANY,DES,AESCFB128,AESCFB192,AESCFB256}] [-or config.OID_READ]
+                  [-ow OID_WRITE] [-we] [-wn WRITE_NEW] [-t TARGET] [-pt PORT] [-i INTERFACE] [-eid config.ENGINE_ID] [-o OUTPUT] [-d {0,1,2}] [-to TIMEOUT] [-rt RETRIES] [-dl DELAY]
 
 A modern and intelligent approach to SNMP hacking
 
@@ -40,7 +40,7 @@ Spray Arguments:
                         Singular authentication protocol or try any of them
   -pp {ANY,DES,AESCFB128,AESCFB192,AESCFB256}, --priv-proto {ANY,DES,AESCFB128,AESCFB192,AESCFB256}
                         Singular privacy protocol or try any of them
-  -or OID_READ, --oid-read OID_READ
+  -or config.OID_READ, --oid-read config.OID_READ
                         OID the Spray module will read (default is sysDescr.0)
 
 Write Arguments:
@@ -58,7 +58,7 @@ I/O Arguments:
                         Target port/range (e.g., 161 or 161,162 or 160-165)
   -i INTERFACE, --interface INTERFACE
                         Specify network interface (e.g., eth0, Ethernet0)
-  -eid ENGINE_ID, --engine-id ENGINE_ID
+  -eid config.ENGINE_ID, --engine-id config.ENGINE_ID
                         Specify a hex agent engine ID (e.g., 0x80000000011234567890abcdef)
   -o OUTPUT, --output OUTPUT
                         CSV prepended output filename/path

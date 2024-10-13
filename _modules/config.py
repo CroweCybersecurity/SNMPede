@@ -1,6 +1,9 @@
 # Used for inter-file global variable sharing
-interface_addr4 = None
-interface_addr6 = None
-argdebug = 0
-engine_id = None
-oid_read = None
+INTERFACE_ADDR4 = None
+INTERFACE_ADDR6 = None
+ARGDEBUG = int(0)
+ENGINE_ID = None
+OID_READ = None
+ARGTIMEOUT = float(5)
+ARGRETRIES = int(0)
+ARGDELAY = int(1) # Seconds
