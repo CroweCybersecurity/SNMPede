@@ -7,7 +7,7 @@ SNMPede (SNMP + Centipede) is a pure Python wrapper script around the [PySNMP](h
 The following features are built into SNMPede:
 
 - Authenticated Versioning (v1/2c/3)
-- Spraying of Community Strings (v1/2c/3)
+- Spraying of Community Strings (v1/2c)
 - Spraying usernames with NoAuthNoPriv (v3)
 - Spraying username/password/protocol with AuthNoPriv (v3)
 - Spraying username/passwords/protocols with AuthPriv (v3)
