@@ -4,6 +4,7 @@ import argparse
 import argcomplete
 from csv import DictWriter
 from os.path import exists
+from sys import platform
 import asyncio
 from _modules.bulkwalk import *
 from _modules import config
@@ -543,7 +544,9 @@ async def main():
 
 if __name__ == '__main__':
     try:
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        if platform == 'win32':
+            # https://stackoverflow.com/questions/63860576/asyncio-event-loop-is-closed-when-using-asyncio-run
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
         asyncio.run(main())
     except KeyboardInterrupt:
         print('[e] Program termination requested by user')
