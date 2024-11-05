@@ -36,7 +36,7 @@ async def snmp_v12c_get_multi(semaphore, task_id, target, port, snmp_version, co
 
             await asyncio.sleep(config.ARGDELAY)
 
-            errorIndication, errorStatus, errorIndex, varBinds = await getCmd(
+            errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
                 snmpEngine,
                 CommunityData(community_string, mpModel=mpModel),
                 transport_target,
@@ -105,7 +105,7 @@ async def snmp_v3_get_multi(semaphore, task_id, target, port, usernames, authpas
         if type(usernames) == list:
             for username in usernames:
                 if config.ARGDEBUG >= 1: print(f"[d] '{username}' -> {target[0]}:{port}")
-                errorIndication, errorStatus, errorIndex, varBinds = await getCmd(
+                errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
                     snmpEngine,
                     UsmUserData(userName=username),
                     transport_target,
@@ -154,7 +154,7 @@ async def snmp_v3_get_multi(semaphore, task_id, target, port, usernames, authpas
             for password in authpasswords:
                 for protocol in authprotocols:
                     if config.ARGDEBUG >= 1: print(f"[d] '{usernames}/{password}/{protocol['Name']}' -> {target[0]}:{port}")
-                    errorIndication, errorStatus, errorIndex, varBinds = await getCmd(
+                    errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
                         snmpEngine,
                         UsmUserData(userName=usernames, authKey=password, authProtocol=protocol['Class']),
                         transport_target,
@@ -195,7 +195,7 @@ async def snmp_v3_get_multi(semaphore, task_id, target, port, usernames, authpas
             for password in privpasswords:
                 for protocol in privprotocols:
                     if config.ARGDEBUG >= 1: print(f"[d] '{usernames}/{authpasswords}/{authprotocols['Name']}/{password}/{protocol['Name']}' -> {target[0]}:{port}")
-                    errorIndication, errorStatus, errorIndex, varBinds = await getCmd(
+                    errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
                         snmpEngine,
                         UsmUserData(userName=usernames, authKey=authpasswords, authProtocol=authprotocols['Class'], privKey=password, privProtocol=protocol['Class']),
                         transport_target,

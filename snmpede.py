@@ -19,7 +19,7 @@ import psutil
 # MARK: Target Class
 class Target:
 
-    def __init__(self, FQDN, IP, IPVersion, Port, SNMPVersion=None, CommunityString=None, Username=None, AuthPwd=None, AuthProto=None, PrivPwd=None, PrivProto=None, Access=False):
+    def __init__(self, FQDN, IP, IPVersion, Port, SNMPVersion=None, CommunityString=None, Username=None, AuthPwd=None, AuthProto={'Name': None, 'Class': None}, PrivPwd=None, PrivProto={'Name': None, 'Class': None}, Access=False):
         self.FQDN = FQDN # Some provided targets may not have a DNS FQDN. If they don't, this will be the IP address also.
         self.IP = IP
         self.IPVersion = IPVersion
@@ -106,9 +106,9 @@ async def main():
     io_group.add_argument('-eid', '--engine-id', type=str, help='Specify a hex agent engine ID (e.g., 0x80000000011234567890abcdef)')
     io_group.add_argument('-o', '--output', type=str, default='SNMPede_', help='CSV prepended output filename/path')
     io_group.add_argument('-d', '--debug', type=int, default=0, choices=[0, 1, 2], help='Debug level to stdout')
-    io_group.add_argument('-to', '--timeout', type=float, default=7, help='Timeout seconds')
+    io_group.add_argument('-to', '--timeout', type=float, default=0.4, help='Timeout seconds')
     io_group.add_argument('-rt', '--retries', type=int, default=0, help='Retries count')
-    io_group.add_argument('-dl', '--delay', type=float, default=0.7, help='Seconds delay between each request')
+    io_group.add_argument('-dl', '--delay', type=float, default=0.3, help='Seconds delay between each request')
     io_group.add_argument('-or', '--oid-read', type=str, default='1.3.6.1.2.1.1.1.0', help='OID the Spray module will read (default is sysDescr.0)')
     io_group.add_argument('-tk', '--tasks', type=int, default=10, help='Number of concurrent tasks')
     #io_group.add_argument('-ow', '--oid-write', type=str, default='', help='')
@@ -414,7 +414,6 @@ async def main():
 
         # MARK: AuthPwd
         if args.password:
-            print("[i] Spraying SNMP v3 password(s) with AuthNoPriv...")
             tasks = []
             task_results = []
             
@@ -422,29 +421,32 @@ async def main():
             instances = get_instances_with_attribute(Target_instances, 'Access', False)
             # Filter for those with Username not None
             instances = get_instances_with_attribute(instances, 'Username')
-            if config.ARGDEBUG >= 1: print(f"[d] Using the relevant ({len(instances)}) instances")
+            if instances:
+                print("[i] Spraying SNMP v3 password(s) with AuthNoPriv...")
+                if config.ARGDEBUG >= 1: print(f"[d] Using the relevant ({len(instances)}) instances")
+                for id, instance in enumerate(instances):
+                    tasks.append(asyncio.create_task(snmp_v3_get_multi(semaphore, id, (instance.FQDN, instance.IP, instance.IPVersion), instance.Port, instance.Username, authpasswords=passwords, authprotocols=auth_protocols, instance=instance)))
 
-            for id, instance in enumerate(instances):
-                tasks.append(asyncio.create_task(snmp_v3_get_multi(semaphore, id, (instance.FQDN, instance.IP, instance.IPVersion), instance.Port, instance.Username, authpasswords=passwords, authprotocols=auth_protocols, instance=instance)))
+                # Wait for auth spraying to finish
+                try:
+                    task_results.extend(await asyncio.gather(*tasks))
+                except Exception as e:
+                    print(f"[e] An AuthNoPriv spraying error occurred: {e}")
+                    quit()
 
-            # Wait for auth spraying to finish
-            try:
-                task_results.extend(await asyncio.gather(*tasks))
-            except Exception as e:
-                print(f"[e] An AuthNoPriv spraying error occurred: {e}")
-                quit()
-
-            print("[-] Writing results...")
-            for r in task_results:
-                append_csv(outputfile, ['Host', 'Port', 'Version', 'Username', 'AuthPassword', 'AuthProtocol', 'PrivPassword', 'PrivProtocol', 'OID', 'Value', 'Status'], r)
-            
-            if len(Target_instances) == 0 or len(get_instances_with_attribute(Target_instances, 'AuthPwd')) == 0:
-                print(f"[i] No AuthNoPriv password(s) found.\n")
-                quit()
+                print("[-] Writing results...")
+                for r in task_results:
+                    append_csv(outputfile, ['Host', 'Port', 'Version', 'Username', 'AuthPassword', 'AuthProtocol', 'PrivPassword', 'PrivProtocol', 'OID', 'Value', 'Status'], r)
+                
+                if len(Target_instances) == 0 or len(get_instances_with_attribute(Target_instances, 'AuthPwd')) == 0:
+                    print(f"[i] No AuthNoPriv password(s) found.\n")
+                    quit()
+                else:
+                    print() # For pretty stdout
             else:
-                print() # For pretty stdout
+                print("[i] Skipping spraying AuthNoPriv as its unnecessary...\n")
 
-
+            
             # MARK: PrivPwd
             # Doing async like this so that we don't DDOS a specific SNMP agent
             # Filter for any unfinished targets
@@ -495,7 +497,7 @@ async def main():
             if instances:
                 tasks = []
                 task_results = []
-                print("[i] Walking in bulk v1/2c information...")
+                print("[i] Bulkwalking v1/2c information...")
                 if config.ARGDEBUG >= 1: print(f"[d] Using the relevant ({len(instances)}) v1/2c instances")
                 for id, instance in enumerate(instances):
                     if config.ARGDEBUG >= 1: print(instance)
@@ -520,7 +522,7 @@ async def main():
             if instances:
                 tasks = []
                 task_results = []
-                print("[i] Walking in bulk v3 information...")
+                print("[i] Bulkwalking v3 information...")
                 if config.ARGDEBUG >= 1: print(f"[d] Using the relevant ({len(instances)}) v3 instances")
                 for id, instance in enumerate(instances):
                     if config.ARGDEBUG >= 1: print(instance)

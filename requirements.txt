@@ -1,4 +1,5 @@
-pysnmp >= 7.1.4
+pysnmp >= 7.1.11
 cryptography >= 43.0.1
 pysnmp-mibs
 psutil
+argcomplete
