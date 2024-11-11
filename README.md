@@ -14,8 +14,9 @@ The following features are built into SNMPede:
 - BulkWalk of entire SNMP agents (v2c/v3)
 
 ```cmd
-usage: SNMPede.py [-h] [--spray] [--bulkwalk] [--all] [-c COMMUNITY] [-u USERNAME] [-p PASSWORD] [-ap {ANY,HMACMD5,HMACSHA,HMAC128SHA224,HMAC192SHA256,HMAC256SHA384,HMAC384SHA512}] [-pp {ANY,DES,AESCFB128,AESCFB192,AESCFB256}] [-t TARGET]
-                  [-pt PORT] [-i INTERFACE] [-eid ENGINE_ID] [-o OUTPUT] [-d {0,1,2}] [-to TIMEOUT] [-rt RETRIES] [-dl DELAY] [-or OID_READ] [-tk TASKS]
+usage: snmpede.py [-h] [-c COMMUNITY] [-u USERNAME] [-p PASSWORD] [--bulkwalk] [--all] [-t TARGET] [-pt PORT]
+                  [-i INTERFACE] [-eid ENGINE_ID] [-o OUTPUT] [-d {0,1,2}] [-to TIMEOUT] [-rt RETRIES] [-dl DELAY]
+                  [-or OID_READ] [-tk TASKS]
 
 A modern and intelligent approach to SNMP hacking
 
@@ -23,21 +24,14 @@ optional arguments:
   -h, --help            show this help message and exit
 
 Modules:
-  --spray               Spray any provided community strings, credentials (user/pass), and combos
-  --bulkwalk            Collect as much information as possible
-  --all                 CAUTION: Use all above modules
-
-Spray Arguments:
   -c COMMUNITY, --community COMMUNITY
-                        Singular community string or file containing line-delimited strings
+                        Login with a provided community string or line-delimited file
   -u USERNAME, --username USERNAME
-                        Singular username or file containing line-delimited usernames
+                        Login with a username or line-delimited file
   -p PASSWORD, --password PASSWORD
-                        Singular password or file containing line-delimited passwords
-  -ap {ANY,HMACMD5,HMACSHA,HMAC128SHA224,HMAC192SHA256,HMAC256SHA384,HMAC384SHA512}, --auth-proto {ANY,HMACMD5,HMACSHA,HMAC128SHA224,HMAC192SHA256,HMAC256SHA384,HMAC384SHA512}
-                        Singular authentication protocol or try any of them
-  -pp {ANY,DES,AESCFB128,AESCFB192,AESCFB256}, --priv-proto {ANY,DES,AESCFB128,AESCFB192,AESCFB256}
-                        Singular privacy protocol or try any of them
+                        Login with a password or line-delimited file
+  --bulkwalk            Collect as much information as possible
+  --all                 CAUTION: Use all above modules and default login dictionaries
 
 I/O Arguments:
   -t TARGET, --target TARGET
@@ -59,7 +53,7 @@ I/O Arguments:
   -dl DELAY, --delay DELAY
                         Seconds delay between each request
   -or OID_READ, --oid-read OID_READ
-                        OID the Spray module will read (default is sysDescr.0)
+                        OID the Login module will read (default is sysDescr.0)
   -tk TASKS, --tasks TASKS
                         Number of concurrent tasks
 ```
@@ -69,43 +63,43 @@ I/O Arguments:
 To install the tool, install/upgrade these various packages:
 
 ```cmd
-python -m pip install -r requirements.txt --upgrade
+python -m pip install -r 'requirements.txt'
 ```
 
 ## Usage
 
-The Spray module is a requirement to take advantage of the BulkWalk and other future post-exploitation modules. See the module usages below:
+Please note that if you are only using the Post-Exploitation features, we will still check to see if your authentication is valid prior. See the module usages below:
 
 ### All
 
-This submodule will do the following:
+This selection will:
 
 1. Spray v1/2c community strings
-2. Spray/discover v3 usernames (NoAuthNoPriv)
-3. Spray discovered v3 usernames and authentication passwords/algorithms (AuthNoPriv)
-4. Spray discovered v3 usernames, discovered authentication passwords/algorithms, and privacy passwords/algorithms (AutPriv)
+2. Spray v3 usernames (NoAuthNoPriv)
+3. Spray v3 usernames and authentication passwords/algorithms (AuthNoPriv)
+4. Spray v3 usernames, authentication passwords/algorithms, and privacy passwords/algorithms (AuthPriv)
 5. BulkWalk any successfully accessed SNMP agents
 
 ```cmd
-python SNMPede.py --all -t targets.txt -c Dictionaries/Community_Strings.txt -u Dictionaries/Usernames.txt -p Dictionaries/Passwords.txt
+python SNMPede.py --all -t 'targets.txt' -c 'Dictionaries/Community_Strings.txt' -u 'Dictionaries/Usernames.txt' -p 'Dictionaries/Passwords.txt'
 ```
 
 ### Spray: Community Strings
 
 ```cmd
-python SNMPede.py --spray -t targets.txt -c Dictionaries/Community_Strings.txt
+python SNMPede.py -t 'targets.txt' -c 'Dictionaries/Community_Strings.txt'
 ```
 
 ### Spray: Passwords
 
-This submodule will do the following:
+This selection will:
 
-1. Spray/discover usernames (NoAuthNoPriv)
-2. Spray discovered usernames and authentication passwords/algorithms (AuthNoPriv)
-3. Spray discovered usernames, discovered authentication passwords/algorithms, and privacy passwords/algorithms (AuthPriv)
+1. Spray usernames (NoAuthNoPriv)
+2. Spray usernames and authentication passwords/algorithms (AuthNoPriv)
+3. Spray usernames, authentication passwords/algorithms, and privacy passwords/algorithms (AuthPriv)
 
 ```cmd
-python SNMPede.py --spray -t targets.txt -u Dictionaries/Usernames.txt -p Dictionaries/Passwords.txt
+python SNMPede.py -t 'targets.txt' -u 'Dictionaries/Usernames.txt' -p 'Dictionaries/Passwords.txt'
 ```
 
 ## Existing Research
