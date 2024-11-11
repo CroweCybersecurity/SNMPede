@@ -4,3 +4,4 @@
 !Dictionaries/*
 __pycache__
 *.pyc
+*.log

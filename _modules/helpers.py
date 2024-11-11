@@ -2,6 +2,7 @@ from os.path import exists
 from socket import getaddrinfo, gaierror, AF_INET, AF_INET6
 from ipaddress import IPv4Address, IPv6Address, AddressValueError
 from re import compile
+from _modules import config
 
 global fqdn_regex
 fqdn_regex = compile(r'^(?=.{1,253}$)(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.[A-Za-z]{2,})+$')
@@ -48,6 +49,7 @@ async def resolve_target(target):
 async def convert_to_list(param):
     # Check if the param is an existing file
     if exists(param):
+        config.WASFILEIMPORTED = True
         with open(param, 'r') as file:
             # Read the file into a list, stripping newline characters
             param_list = [line.strip() for line in file.readlines()]
@@ -83,3 +85,8 @@ def get_instances_with_attribute(instances, attribute_name, attribute_value=None
             if hasattr(instance, attribute_name) and getattr(instance, attribute_name) is not None:
                 matching_instances.append(instance)
     return matching_instances
+
+# Function to help raise exception from async tasks
+def handle_task_result(task):
+    if task.exception():
+        print(f"Task exception: {task.exception()}")

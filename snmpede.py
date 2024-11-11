@@ -18,7 +18,6 @@ import psutil
 
 # MARK: Target Class
 class Target:
-
     def __init__(self, FQDN, IP, IPVersion, Port, SNMPVersion=None, CommunityString=None, Username=None, AuthPwd=None, AuthProto={'Name': None, 'Class': None}, PrivPwd=None, PrivProto={'Name': None, 'Class': None}, Access=False):
         self.FQDN = FQDN # Some provided targets may not have a DNS FQDN. If they don't, this will be the IP address also.
         self.IP = IP
@@ -83,21 +82,15 @@ def append_csv(filepath, fieldnames, data):
 # MARK: Main
 async def main():
     parser = argparse.ArgumentParser(description='A modern and intelligent approach to SNMP hacking')
-        
+
     module_group = parser.add_argument_group('Modules')
     #module_group.add_argument('--scan', action='store_true', help='Scan for SNMP services')
-    module_group.add_argument('--spray', action='store_true', help='Spray any provided community strings, credentials (user/pass), and combos')
-    #module_group.add_argument('--write', action='store_true', help='Check if write access is possible')
+    module_group.add_argument('-c', '--community', type=str, help='Login with a provided community string or line-delimited file')
+    module_group.add_argument('-u', '--username', type=str, help='Login with a username or line-delimited file')
+    module_group.add_argument('-p', '--password', type=str, help='Login with a password or line-delimited file') # Is used for auth and priv passwords/keys
     module_group.add_argument('--bulkwalk', action='store_true', help='Collect as much information as possible')
-    module_group.add_argument('--all', action='store_true', help='CAUTION: Use all above modules')
-
-    auth_group = parser.add_argument_group('Spray Arguments')
-    auth_group.add_argument('-c', '--community', type=str, help='Singular community string or file containing line-delimited strings')
-    auth_group.add_argument('-u', '--username', type=str, help='Singular username or file containing line-delimited usernames')
-    auth_group.add_argument('-p', '--password', type=str, help='Singular password or file containing line-delimited passwords') # Is used for auth and priv passwords/keys
-    auth_group.add_argument('-ap', '--auth-proto', type=str, default='ANY', choices=['ANY', 'HMACMD5', 'HMACSHA', 'HMAC128SHA224', 'HMAC192SHA256', 'HMAC256SHA384', 'HMAC384SHA512'], help='Singular authentication protocol or try any of them')
-    auth_group.add_argument('-pp', '--priv-proto', type=str, default='ANY', choices=['ANY', 'DES', 'AESCFB128', 'AESCFB192', 'AESCFB256'], help='Singular privacy protocol or try any of them')
-    #auth_group.add_argument('-cb', '--combo', help='File containing line-delimited combos (host,port,username,password/string)')
+    #module_group.add_argument('--write', action='store_true', help='Check if write access is possible')
+    module_group.add_argument('--all', action='store_true', help='CAUTION: Use all above modules and default login dictionaries')
 
     io_group = parser.add_argument_group('I/O Arguments')
     io_group.add_argument('-t', '--target', type=str, help='Singular hostname or IPv4/IPv6 address or file containing line-delimited targets')
@@ -109,8 +102,9 @@ async def main():
     io_group.add_argument('-to', '--timeout', type=float, default=0.4, help='Timeout seconds')
     io_group.add_argument('-rt', '--retries', type=int, default=0, help='Retries count')
     io_group.add_argument('-dl', '--delay', type=float, default=0.3, help='Seconds delay between each request')
-    io_group.add_argument('-or', '--oid-read', type=str, default='1.3.6.1.2.1.1.1.0', help='OID the Spray module will read (default is sysDescr.0)')
+    io_group.add_argument('-or', '--oid-read', type=str, default='1.3.6.1.2.1.1.1.0', help='OID the Login module will read (default is sysDescr.0)')
     io_group.add_argument('-tk', '--tasks', type=int, default=10, help='Number of concurrent tasks')
+    #io_group.add_argument('-cb', '--combo', help='File containing line-delimited combos (host,port,username,password/string)')
     #io_group.add_argument('-ow', '--oid-write', type=str, default='', help='')
 
     argcomplete.autocomplete(parser)
@@ -128,11 +122,12 @@ async def main():
     """
     print(ascii_art)
 
-    # Tier 2 debugging
-    #if config.ARGDEBUG >= 2: debug.setLogger(debug.Debug('secmod', 'msgproc'))
-
     # Update inter-module global variables in config.py with the provided args
     config.ARGTIMEOUT, config.ARGRETRIES, config.ARGDELAY, config.ARGDEBUG, config.OID_READ = args.timeout, args.retries, args.delay, args.debug, args.oid_read
+
+    # Tier 2 debugging
+    #if config.ARGDEBUG >= 2:
+        #debug.setLogger(debug.Debug('all'))
 
     # MARK: Exception Checks
     if not args.target:
@@ -147,10 +142,14 @@ async def main():
         for target in targets: # Returns (FQDN, IP, Version)
             tasks.append(asyncio.create_task(resolve_target(target)))
 
-    if not (args.spray or args.all): #args.scan
+    if not (args.community or args.username or args.password or args.bulkwalk or args.all): #args.scan
         print("[e] No module was selected. Please pick one:")
         parser.print_help()
         quit()
+
+    # Tell async task to raise an exception
+    for task in tasks:
+        task.add_done_callback(handle_task_result)
 
     # Wait for name resolution to finish before continuing
     try:
@@ -189,14 +188,9 @@ async def main():
             print(f"[d] IPv6 local address: {config.INTERFACE_ADDR6}")
     
 
-    if args.spray or args.all:
-        if not args.community and not args.username and not args.password:
-            print("[e] Although the spray module was specified, neither a community, username, or password was provided. You may consider the Dictionaries/ provided.")
-            parser.print_help()
-            quit()
-
-    if args.bulkwalk and not (args.spray or args.all):
-        print("[e] The BulkWalk module requires the Spray or All modules.")
+    if args.all and not (args.community or args.username or args.password):
+        print("[e] Although the All module was specified, neither a community, username, or password was provided.")
+        parser.print_help()
         quit()
 
     # Convert the singular or multiple ports to a list
@@ -213,7 +207,7 @@ async def main():
         usernames = await convert_to_list(args.username)
         if config.ARGDEBUG >= 1: print("[d] " + str(len(usernames)) + ' username(s)')
 
-    if args.all or (args.spray and args.password):
+    if args.password:
         if not args.username:
             print("[e] Password(s) detected, but no usernames detected. Please adjust.")
             quit()
@@ -229,8 +223,7 @@ async def main():
     
     # Agent engine ID requires `0x`, make sure it does:
     if args.engine_id and not (args.engine_id).startswith('0x'):
-        print("[e] The agent engine ID must start with '0x'.")
-        quit()
+        config.ENGINE_ID = '0x' + args.engine_id
     else:
         config.ENGINE_ID = args.engine_id
 
@@ -243,11 +236,6 @@ async def main():
         {'Name': 'HMAC256SHA384', 'Class': usmHMAC256SHA384AuthProtocol},
         {'Name': 'HMAC384SHA512', 'Class': usmHMAC384SHA512AuthProtocol}
     ]
-    if args.auth_proto != 'Any':
-        for protocol in auth_protocols:
-            if protocol['Name'] == args.auth_proto:
-                auth_protocols = [protocol]
-                break
 
     # Map custom priv protocol to Name/Class
     priv_protocols = [
@@ -256,11 +244,6 @@ async def main():
         {'Name': 'AESCFB192', 'Class': usmAesCfb192Protocol},
         {'Name': 'AESCFB256', 'Class': usmAesCfb256Protocol}
     ]
-    if args.priv_proto != 'Any':
-        for protocol in priv_protocols:
-            if protocol['Name'] == args.priv_proto:
-                priv_protocols = [protocol]
-                break
 
     # MARK: Scan
     # if args.scan or args.all:
@@ -276,6 +259,10 @@ async def main():
     #     if not exists(outputfile):
     #         write_fieldnames(outputfile, 'Host,Protocol,Port,Service,Status\n')
 
+    #    # Tell async task to raise an exception
+    #    for task in tasks:
+    #        task.add_done_callback(handle_task_result)
+    #
     #     # Wait for port scanning to finish
     #     try:
     #         task_results = await asyncio.gather(*tasks)
@@ -293,212 +280,234 @@ async def main():
         #         imported_instances = True
 
     #     if len(Target_instances) == 0:
-    #         if args.spray or args.all:
-    #             quit_text = ' Quitting...'
-    #         else:
-    #             quit_text = ''
     #         print(f"[i] No open port(s) found{quit_text}.\n")
     #         quit()
     #     else:
     #         print() # For pretty stdout
 
 
+    # If we are not spraying, but instead just checking authentication, let's clarify that:
+    if config.WASFILEIMPORTED:
+        intention = 'Spray'
+    else:
+        intention = 'Check'
+
+
     # MARK: Comm_Strings
-    if args.spray or args.all:
-        if args.community:
-            if config.ARGDEBUG >=1: print() # For pretty stdout #  and not args.scan
-            print("[i] Spraying SNMP versions 1/2c community string(s)...")
-            tasks = []
-            task_results = []
-            
-            # Perform v1 community string spraying
-            if len(Target_instances) > 0:
-                if config.ARGDEBUG >= 1: print(f"[d] Using the existing ({len(Target_instances)}) instances")
-                for id, instance in enumerate(Target_instances):
-                    tasks.append(asyncio.create_task(snmp_v12c_get_multi(semaphore, id, (instance.FQDN, instance.IP, instance.IPVersion), instance.port, 'v1', community_strings, instance=instance)))
-            else:
-                id = 0
-                for target in resolved_targets:
-                    for port in ports:
-                        tasks.append(asyncio.create_task(snmp_v12c_get_multi(semaphore, id, target, port, 'v1', community_strings)))
-                        id = id + 1
-            
-            # Wait for community string v1 spraying to finish before beginning v2c
-            try:
-                task_results.extend(await asyncio.gather(*tasks))
-            except Exception as e:
-                print(f"[e] A v1 community string spraying error occurred: {e}")
-                quit()
+    if args.community:
+        if config.ARGDEBUG >=1: print() # For pretty stdout #  and not args.scan
+        print(f"[i] {intention}ing SNMP versions 1/2c community string(s)...")
+        tasks = []
+        task_results = []
+        
+        # Perform v1 community string spraying/checking
+        if len(Target_instances) > 0:
+            if config.ARGDEBUG >= 1: print(f"[d] Using the existing ({len(Target_instances)}) instances:")
+            for id, instance in enumerate(Target_instances):
+                tasks.append(asyncio.create_task(snmp_v12c_get_multi(semaphore, id, (instance.FQDN, instance.IP, instance.IPVersion), instance.port, 'v1', community_strings, instance=instance)))
+        else:
+            id = 0
+            for target in resolved_targets:
+                for port in ports:
+                    tasks.append(asyncio.create_task(snmp_v12c_get_multi(semaphore, id, target, port, 'v1', community_strings)))
+                    id = id + 1
+        
+        # Tell async task to raise an exception
+        for task in tasks:
+            task.add_done_callback(handle_task_result)
 
-            # Perform v2c community string spraying
-            task_results = []
-            if len(Target_instances) > 0:
-                for id, instance in enumerate(Target_instances):
-                    tasks.append(asyncio.create_task(snmp_v12c_get_multi(semaphore, id, (instance.FQDN, instance.IP, instance.IPVersion), instance.port, 'v2c', community_strings, instance=instance)))
-            else:
-                id = 0
-                for target in resolved_targets:
-                    for port in ports:
-                        tasks.append(asyncio.create_task(snmp_v12c_get_multi(semaphore, id, target, port, 'v2c', community_strings)))
-                        id = id + 1
-            
-            # Wait for community string v2c spraying to finish
-            try:
-                task_results.extend(await asyncio.gather(*tasks))
-            except Exception as e:
-                print(f"[e] A v2c community string spraying error occurred: {e}")
-                quit()
+        # Wait for community string v1 spraying/checking to finish before beginning v2c
+        try:
+            task_results.extend(await asyncio.gather(*tasks))
+        except Exception as e:
+            print(f"[e] A v1 community string {intention.lower()}ing error occurred: {e}")
+            quit()
 
-            outputfile = args.output + 'v12c_Spray_Community_Strings.csv'
-            if not exists(outputfile):
-                write_fieldnames(outputfile, 'Host,Port,Version,CommunityString,OID,Value,Status\n')
+        # Perform v2c community string spraying/checking
+        task_results = []
+        if len(Target_instances) > 0:
+            for id, instance in enumerate(Target_instances):
+                tasks.append(asyncio.create_task(snmp_v12c_get_multi(semaphore, id, (instance.FQDN, instance.IP, instance.IPVersion), instance.port, 'v2c', community_strings, instance=instance)))
+        else:
+            id = 0
+            for target in resolved_targets:
+                for port in ports:
+                    tasks.append(asyncio.create_task(snmp_v12c_get_multi(semaphore, id, target, port, 'v2c', community_strings)))
+                    id = id + 1
+        
+        # Tell async task to raise an exception
+        for task in tasks:
+            task.add_done_callback(handle_task_result)
 
-            print("[-] Writing results...")
-            for r, instances in task_results:
-                append_csv(outputfile, ['Host', 'Port', 'Version', 'CommunityString', 'OID', 'Value', 'Status'], r)
+        # Wait for community string v2c spraying/checking to finish
+        try:
+            task_results.extend(await asyncio.gather(*tasks))
+        except Exception as e:
+            print(f"[e] A v2c community string {intention.lower()}ing error occurred: {e}")
+            quit()
+
+        outputfile = args.output + f"v12c_{intention}_Community_Strings.csv"
+        if not exists(outputfile):
+            write_fieldnames(outputfile, 'Host,Port,Version,CommunityString,OID,Value,Status\n')
+
+        print("[-] Writing results...")
+        for r, instances in task_results:
+            append_csv(outputfile, ['Host', 'Port', 'Version', 'CommunityString', 'OID', 'Value', 'Status'], r)
+            for instance in instances:
+                Target_instances.append(instance)
+        
+        if len(Target_instances) == 0:
+            print(f"[i] No community string(s) found.\n")
+            quit()
+        else:
+            print() # For pretty stdout
+
+    
+    # MARK: UserEnum
+    if args.username:
+        if config.ARGDEBUG >=1 and not args.community: print() # For pretty stdout # (args.scan or args.community)
+        print(f"[i] {intention}ing SNMP v3 username(s) with NoAuthNoPriv...")
+        tasks = []
+        task_results = []
+        
+        instances = get_instances_with_attribute(Target_instances, 'Access', False)
+        if instances:
+            if config.ARGDEBUG >= 1: print(f"[d] Using the relevant ({len(instances)}) instances:")
+            for id, instance in enumerate(Target_instances):
+                tasks.append(asyncio.create_task(snmp_v3_get_multi(semaphore, id, (instance.FQDN, instance.IP, instance.IPVersion), instance.Port, usernames, instance=instance)))
+        else:
+            id = 0
+            for target in resolved_targets:
+                for port in ports:
+                    tasks.append(asyncio.create_task(snmp_v3_get_multi(semaphore, id, target, port, usernames)))
+                    id = id + 1
+        
+        outputfile = args.output + f"v3_{intention}_Credentials.csv"
+        if not exists(outputfile):
+            write_fieldnames(outputfile, 'Host,Port,Version,Username,AuthPassword,AuthProtocol,PrivPassword,PrivProtocol,OID,Value,Status\n')
+
+        # Tell async task to raise an exception
+        for task in tasks:
+            task.add_done_callback(handle_task_result)
+
+        # Wait for username spraying/checking to finish
+        try:
+            task_results.extend(await asyncio.gather(*tasks))
+        except Exception as e:
+            print(f"[e] A username {intention.lower()}ing error occurred: {e}")
+            quit()
+
+        print("[-] Writing results...")
+        imported_instances = False
+        for r, instances in task_results:
+            append_csv(outputfile, ['Host', 'Port', 'Version', 'Username', 'AuthPassword', 'AuthProtocol', 'PrivPassword', 'PrivProtocol', 'OID', 'Value', 'Status'], r)
+            if imported_instances is False:
                 for instance in instances:
                     Target_instances.append(instance)
-            
-            if len(Target_instances) == 0:
-                print(f"[i] No community string(s) found.\n")
-                quit()
-            else:
-                print() # For pretty stdout
-
+                imported_instances = True
         
-        # MARK: UserEnum
-        if args.username:
-            if config.ARGDEBUG >=1 and not args.community: print() # For pretty stdout # (args.scan or args.community)
-            print("[i] Spraying SNMP v3 username(s) with NoAuthNoPriv...")
-            tasks = []
-            task_results = []
-            
-            instances = get_instances_with_attribute(Target_instances, 'Access', False)
-            if instances:
-                if config.ARGDEBUG >= 1: print(f"[d] Using the relevant ({len(instances)}) instances")
-                for id, instance in enumerate(Target_instances):
-                    tasks.append(asyncio.create_task(snmp_v3_get_multi(semaphore, id, (instance.FQDN, instance.IP, instance.IPVersion), instance.Port, usernames, instance=instance)))
-            else:
-                id = 0
-                for target in resolved_targets:
-                    for port in ports:
-                        tasks.append(asyncio.create_task(snmp_v3_get_multi(semaphore, id, (instance.FQDN, instance.IP, instance.IPVersion), port, usernames)))
-                        id = id + 1
-            
-            outputfile = args.output + 'v3_Spray_Credentials.csv'
-            if not exists(outputfile):
-                write_fieldnames(outputfile, 'Host,Port,Version,Username,AuthPassword,AuthProtocol,PrivPassword,PrivProtocol,OID,Value,Status\n')
+        if len(Target_instances) == 0 or len(get_instances_with_attribute(Target_instances, 'Username')) == 0:
+            print(f"[i] No username(s) found.\n")
+            quit()
+        else:
+            print() # For pretty stdout
 
-            # Wait for username spraying to finish
+
+    # MARK: AuthPwd
+    if args.password:
+        tasks = []
+        task_results = []
+        
+        # Filter for any unfinished targets
+        instances = get_instances_with_attribute(Target_instances, 'Access', False)
+        # Filter for those with Username not None
+        instances = get_instances_with_attribute(instances, 'Username')
+        if instances:
+            print(f"[i] {intention}ing SNMP v3 password(s) with AuthNoPriv...")
+            if config.ARGDEBUG >= 1: print(f"[d] Using the relevant ({len(instances)}) instances:")
+            for id, instance in enumerate(instances):
+                tasks.append(asyncio.create_task(snmp_v3_get_multi(semaphore, id, (instance.FQDN, instance.IP, instance.IPVersion), instance.Port, instance.Username, authpasswords=passwords, authprotocols=auth_protocols, instance=instance)))
+
+            # Tell async task to raise an exception
+            for task in tasks:
+                task.add_done_callback(handle_task_result)
+
+            # Wait for auth spraying/checking to finish
             try:
                 task_results.extend(await asyncio.gather(*tasks))
             except Exception as e:
-                print(f"[e] A username spraying error occurred: {e}")
+                print(f"[e] An AuthNoPriv {intention.lower()}ing error occurred: {e}")
                 quit()
 
             print("[-] Writing results...")
-            imported_instances = False
-            for r, instances in task_results:
+            for r in task_results:
                 append_csv(outputfile, ['Host', 'Port', 'Version', 'Username', 'AuthPassword', 'AuthProtocol', 'PrivPassword', 'PrivProtocol', 'OID', 'Value', 'Status'], r)
-                if imported_instances is False:
-                    for instance in instances:
-                        Target_instances.append(instance)
-                    imported_instances = True
             
-            if len(Target_instances) == 0 or len(get_instances_with_attribute(Target_instances, 'Username')) == 0:
-                print(f"[i] No username(s) found.\n")
+            if len(Target_instances) == 0 or len(get_instances_with_attribute(Target_instances, 'AuthPwd')) == 0:
+                print(f"[i] No AuthNoPriv password(s) found.\n")
                 quit()
             else:
                 print() # For pretty stdout
+        else:
+            print(f"[i] Skipping {intention.lower()}ing AuthNoPriv as its unnecessary...\n")
 
-
-        # MARK: AuthPwd
-        if args.password:
+        
+        # MARK: PrivPwd
+        # Doing async like this so that we don't DDOS a specific SNMP agent
+        # Filter for any unfinished targets
+        instances = get_instances_with_attribute(Target_instances, 'Access', False)
+        # Filter for those with AuthPwd not None
+        instances = get_instances_with_attribute(instances, 'AuthPwd')
+        if instances:
+            print(f"[i] {intention}ing SNMP v3 password(s) with AuthPriv...")
             tasks = []
             task_results = []
+            if config.ARGDEBUG >= 1: print(f"[d] Using the relevant ({len(instances)}) instances:")
+            for id, instance in enumerate(instances):
+                tasks.append(asyncio.create_task(snmp_v3_get_multi(semaphore, id, (instance.FQDN, instance.IP, instance.IPVersion), instance.Port, instance.Username, authpasswords=instance.AuthPwd, authprotocols=instance.AuthProto, privpasswords=passwords, privprotocols=priv_protocols, instance=instance)))
+
+            # Tell async task to raise an exception
+            for task in tasks:
+                task.add_done_callback(handle_task_result)
+
+            # Wait for AuthPriv spraying/checking to finish
+            try:
+                task_results.extend(await asyncio.gather(*tasks))
+            except Exception as e:
+                print(f"[e] An AuthPriv {intention.lower()}ing error occurred: {e}")
+                quit()
+
+            print("[-] Writing results...")
+            for r in task_results:
+                append_csv(outputfile, ['Host', 'Port', 'Version', 'Username', 'AuthPassword', 'AuthProtocol', 'PrivPassword', 'PrivProtocol', 'OID', 'Value', 'Status'], r)
             
-            # Filter for any unfinished targets
-            instances = get_instances_with_attribute(Target_instances, 'Access', False)
-            # Filter for those with Username not None
-            instances = get_instances_with_attribute(instances, 'Username')
-            if instances:
-                print("[i] Spraying SNMP v3 password(s) with AuthNoPriv...")
-                if config.ARGDEBUG >= 1: print(f"[d] Using the relevant ({len(instances)}) instances")
-                for id, instance in enumerate(instances):
-                    tasks.append(asyncio.create_task(snmp_v3_get_multi(semaphore, id, (instance.FQDN, instance.IP, instance.IPVersion), instance.Port, instance.Username, authpasswords=passwords, authprotocols=auth_protocols, instance=instance)))
-
-                # Wait for auth spraying to finish
-                try:
-                    task_results.extend(await asyncio.gather(*tasks))
-                except Exception as e:
-                    print(f"[e] An AuthNoPriv spraying error occurred: {e}")
-                    quit()
-
-                print("[-] Writing results...")
-                for r in task_results:
-                    append_csv(outputfile, ['Host', 'Port', 'Version', 'Username', 'AuthPassword', 'AuthProtocol', 'PrivPassword', 'PrivProtocol', 'OID', 'Value', 'Status'], r)
-                
-                if len(Target_instances) == 0 or len(get_instances_with_attribute(Target_instances, 'AuthPwd')) == 0:
-                    print(f"[i] No AuthNoPriv password(s) found.\n")
-                    quit()
-                else:
-                    print() # For pretty stdout
+            if len(Target_instances) == 0 or len(get_instances_with_attribute(Target_instances, 'PrivPwd')) == 0:
+                print(f"[i] No AuthPriv password(s) found.\n")
             else:
-                print("[i] Skipping spraying AuthNoPriv as its unnecessary...\n")
+                print() # For pretty stdout
+        else:
+            print(f"[i] Skipping {intention.lower()}ing AuthPriv as its unnecessary...\n")
 
-            
-            # MARK: PrivPwd
-            # Doing async like this so that we don't DDOS a specific SNMP agent
-            # Filter for any unfinished targets
-            instances = get_instances_with_attribute(Target_instances, 'Access', False)
-            # Filter for those with AuthPwd not None
-            instances = get_instances_with_attribute(instances, 'AuthPwd')
-            if instances:
-                print("[i] Spraying SNMP v3 password(s) with AuthPriv...")
-                tasks = []
-                task_results = []
-                if config.ARGDEBUG >= 1: print(f"[d] Using the relevant ({len(instances)}) instances")
-                for id, instance in enumerate(instances):
-                    tasks.append(asyncio.create_task(snmp_v3_get_multi(semaphore, id, (instance.FQDN, instance.IP, instance.IPVersion), instance.Port, instance.Username, authpasswords=instance.AuthPwd, authprotocols=instance.AuthProto, privpasswords=passwords, privprotocols=priv_protocols, instance=instance)))
-
-                # Wait for AuthPriv spraying to finish
-                try:
-                    task_results.extend(await asyncio.gather(*tasks))
-                except Exception as e:
-                    print(f"[e] An AuthPriv spraying error occurred: {e}")
-                    quit()
-
-                print("[-] Writing results...")
-                for r in task_results:
-                    append_csv(outputfile, ['Host', 'Port', 'Version', 'Username', 'AuthPassword', 'AuthProtocol', 'PrivPassword', 'PrivProtocol', 'OID', 'Value', 'Status'], r)
-                
-                if len(Target_instances) == 0 or len(get_instances_with_attribute(Target_instances, 'PrivPwd')) == 0:
-                    print(f"[i] No AuthPriv password(s) found.\n")
-                else:
-                    print() # For pretty stdout
-            else:
-                print("[i] Skipping spraying AuthPriv as its unnecessary...\n")
-
-        # We need to cleanse no Access instances so that our post-access
-        # activities can be efficient
-        for instance in Target_instances:
-            if instance.Access == False:
-                Target_instances.remove(instance)
-                del instance
+    # We need to cleanse no Access instances so that our post-access
+    # activities can be efficient
+    for instance in Target_instances:
+        if instance.Access == False:
+            Target_instances.remove(instance)
+            del instance
 
 
     # MARK: BulkWalk
     if args.bulkwalk or args.all:
         if not Target_instances:
-            print("[i] No successful access was achieved. Skipping BulkWalk")
-        else:        
+            print("[i] No successful access was achieved. Skipping BulkWalk module.")
+        else:
             # Doing async like this so that we don't DDOS a specific SNMP agent
             instances = get_instances_with_attribute(Target_instances, 'CommunityString')
+            tasks = []
+            task_results = []
+            print("[i] BulkWalking v1/2c information...")
             if instances:
-                tasks = []
-                task_results = []
-                print("[i] Bulkwalking v1/2c information...")
-                if config.ARGDEBUG >= 1: print(f"[d] Using the relevant ({len(instances)}) v1/2c instances")
+                if config.ARGDEBUG >= 1: print(f"[d] Using the relevant ({len(instances)}) v1/2c instances:")
                 for id, instance in enumerate(instances):
                     if config.ARGDEBUG >= 1: print(instance)
                     tasks.append(asyncio.create_task(snmp_v12c_bulkwalk(semaphore, id, instance)))
@@ -507,10 +516,15 @@ async def main():
                 if not exists(outputfile):
                     write_fieldnames(outputfile, 'Host,Port,Version,CommunityString,OID,Value,Status\n')
 
+                # Tell async task to raise an exception
+                for task in tasks:
+                    task.add_done_callback(handle_task_result)
+                
                 # Wait for BulkWalk to finish
                 try:
                     task_results.extend(await asyncio.gather(*tasks))
                 except Exception as e:
+                    print(f"[e] A v1/2c BulkWalk error occurred: {e}")
                     quit()
 
                 print("[-] Writing results...\n")
@@ -522,8 +536,8 @@ async def main():
             if instances:
                 tasks = []
                 task_results = []
-                print("[i] Bulkwalking v3 information...")
-                if config.ARGDEBUG >= 1: print(f"[d] Using the relevant ({len(instances)}) v3 instances")
+                print("[i] BulkWalking v3 information...")
+                if config.ARGDEBUG >= 1: print(f"[d] Using the relevant ({len(instances)}) v3 instances:")
                 for id, instance in enumerate(instances):
                     if config.ARGDEBUG >= 1: print(instance)
                     tasks.append(asyncio.create_task(snmp_v3_bulkwalk(semaphore, id, instance)))
@@ -531,6 +545,10 @@ async def main():
                 outputfile = args.output + 'v3_BulkWalk.csv'
                 if not exists(outputfile):
                     write_fieldnames(outputfile, 'Host,Port,Username,AuthPassword,AuthProtocol,PrivPassword,PrivProtocol,OID,Value,Status\n')
+
+                # Tell async task to raise an exception
+                for task in tasks:
+                    task.add_done_callback(handle_task_result)
 
                 # Wait for BulkWalk to finish
                 try:

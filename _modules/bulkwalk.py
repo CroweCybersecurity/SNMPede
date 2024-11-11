@@ -13,12 +13,12 @@ async def snmp_v12c_bulkwalk(semaphore, task_id, instance):
             snmpEngine = SnmpEngine(snmpEngineID=OctetString(hexValue=config.ENGINE_ID))
         else:
             snmpEngine = SnmpEngine()
-        
+
         if instance.IPVersion == 'v4':
             transport_target = await UdpTransportTarget.create((instance.FQDN, instance.Port), config.ARGTIMEOUT, config.ARGRETRIES)
         else:
             transport_target = await Udp6TransportTarget.create((instance.FQDN, instance.Port), config.ARGTIMEOUT, config.ARGRETRIES)
-        
+
         # Bind to NIC IP address
         if config.INTERFACE_ADDR4 is not None:
             transport_target.transportDomain = (config.INTERFACE_ADDR4, 0)
@@ -26,7 +26,6 @@ async def snmp_v12c_bulkwalk(semaphore, task_id, instance):
             transport_target.transportDomain = (config.INTERFACE_ADDR6, 0)
 
         await asyncio.sleep(config.ARGDELAY)
-
         if instance.SNMPVersion == 'v1':
             mpModel = 0
             print("[i] Skipping a v1 instance due to lack of bulkwalk compatibility [COMING SOON!]")

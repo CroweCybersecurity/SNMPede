@@ -7,3 +7,5 @@ OID_READ = None
 ARGTIMEOUT = float(5)
 ARGRETRIES = int(0)
 ARGDELAY = int(1) # Seconds
+# Used to help determine if 'spray' or 'check' should be printed
+WASFILEIMPORTED = None
