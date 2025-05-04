@@ -28,26 +28,36 @@ async def snmp_v12c_bulkwalk(semaphore, task_id, instance):
         await asyncio.sleep(config.ARGDELAY)
         if instance.SNMPVersion == 'v1':
             mpModel = 0
-            print("[i] Skipping a v1 instance due to lack of bulkwalk compatibility [COMING SOON!]")
-            if config.ARGDEBUG >= 1: print(f"[d] Released {instance.SNMPVersion} task {task_id}")
-            return None
         else:
             mpModel = 1
-            if config.ARGDEBUG >= 1: print(f"[d] '{instance.CommunityString}' -> {instance.FQDN}:{instance.Port}/{instance.SNMPVersion}")
+        
+        if config.ARGDEBUG >= 1: print(f"[d] '{instance.CommunityString}' -> {instance.FQDN}:{instance.Port}/{instance.SNMPVersion}")
 
-        start_varBindType = ObjectType(ObjectIdentity('1.3.6.1.2.1')) # The start of SNMP MIB
-        initialOID = rfc1902.ObjectName("1.3.6.1.2.1")
+        varBindType = ObjectType(ObjectIdentity('1.3.6.1.2.1')) # The start of SNMP MIB
+        initialOID = rfc1902.ObjectName('1.3.6.1.2.1')
 
-        while start_varBindType:
-            errorIndication, errorStatus, errorIndex, varBindTable = await bulk_cmd(
-                snmpEngine,
-                CommunityData(instance.CommunityString, mpModel=mpModel),
-                transport_target,
-                ContextData(),
-                0, 50,
-                start_varBindType,
-                lookupMib=False
-            )
+        while varBindType:
+            if mpModel == 0:
+                print("[e] bulkwalk is not supported on v1 at this moment. Skipping...")
+                break
+                errorIndication, errorStatus, errorIndex, varBindTable = await next_cmd(
+                    snmpEngine,
+                    CommunityData(instance.CommunityString, mpModel=mpModel),
+                    transport_target,
+                    ContextData(),
+                    varBindType,
+                    lookupMib=False,
+                )
+            else:
+                errorIndication, errorStatus, errorIndex, varBindTable = await bulk_cmd(
+                    snmpEngine,
+                    CommunityData(instance.CommunityString, mpModel=mpModel),
+                    transport_target,
+                    ContextData(),
+                    0, 50,
+                    varBindType,
+                    lookupMib=False
+                )
 
             if errorIndication:
                 #print(errorIndication)
@@ -61,9 +71,19 @@ async def snmp_v12c_bulkwalk(semaphore, task_id, instance):
                 for varBindRow in varBindTable:
                     #print(f"{varBindRow[0]} {varBindRow[1]}")
                     results.append({'Host': instance.FQDN, 'Port': instance.Port, 'Version': instance.SNMPVersion, 'CommunityString': instance.CommunityString, 'OID': str(varBindRow[0]), 'Value': str(varBindRow[1]), 'Status': "Success"})
-                    
-                if varBindRow[1].tagSet == EndOfMibView.tagSet or initialOID.isPrefixOf(varBindTable[-1][0]):
-                    break
+                
+                # Check if v1 OID is still within the desired subtree
+                if mpModel == 0:
+                    if not initialOID.isPrefixOf(varBindTable[0]):
+                        varBindType = ObjectType(ObjectIdentity(varBindTable[0]))
+                        await asyncio.sleep(config.ARGDELAY)
+                    else:
+                        break
+                else:
+                    # Check if v2 end has been reached
+                    # Sometimes SNMP MIBs tell you (tagset), other times you have to manually check
+                    if varBindRow[1].tagSet == EndOfMibView.tagSet or initialOID.isPrefixOf(varBindTable[-1][0]):
+                        break
 
         if config.ARGDEBUG >= 1: print(f"[d] Released {instance.SNMPVersion} task {task_id}")
         return results
