@@ -78,16 +78,16 @@ This selection will:
 2. Spray v3 usernames (NoAuthNoPriv)
 3. Spray v3 usernames and authentication passwords/algorithms (AuthNoPriv)
 4. Spray v3 usernames, authentication passwords/algorithms, and privacy passwords/algorithms (AuthPriv)
-5. BulkWalk any successfully accessed SNMP agents
+5. BulkWalk any v2c/v3 successfully accessed SNMP agents
 
 ```cmd
-python SNMPede.py --all -t 'targets.txt' -c 'Dictionaries/Community_Strings.txt' -u 'Dictionaries/Usernames.txt' -p 'Dictionaries/Passwords.txt'
+python snmpede.py --all -t 'targets.txt'
 ```
 
 ### Spray: Community Strings
 
 ```cmd
-python SNMPede.py -t 'targets.txt' -c 'Dictionaries/Community_Strings.txt'
+python snmpede.py -t 'targets.txt' -c 'Dictionaries/Community_Strings.txt'
 ```
 
 ### Spray: Passwords
@@ -99,7 +99,7 @@ This selection will:
 3. Spray usernames, authentication passwords/algorithms, and privacy passwords/algorithms (AuthPriv)
 
 ```cmd
-python SNMPede.py -t 'targets.txt' -u 'Dictionaries/Usernames.txt' -p 'Dictionaries/Passwords.txt'
+python snmpede.py -t 'targets.txt' -u 'Dictionaries/Usernames.txt' -p 'Dictionaries/Passwords.txt'
 ```
 
 ## Existing Research
