@@ -43,7 +43,7 @@ async def main():
     module_group.add_argument('-p', '--password', type=str, help='Login with a password or line-delimited file') # Is used for auth and priv passwords/keys
     module_group.add_argument('--bulkwalk', action='store_true', help='Collect as much information as possible')
     #module_group.add_argument('--write', action='store_true', help='Check if write access is possible')
-    module_group.add_argument('--all', action='store_true', help='CAUTION: Use all above modules and default login dictionaries unless others provided')
+    module_group.add_argument('--all', action='store_true', help='CAUTION: Use all above modules and default dictionaries unless provided')
 
     io_group = parser.add_argument_group('I/O Arguments')
     io_group.add_argument('-t', '--target', type=str, help='Singular hostname or IPv4/IPv6 address or file containing line-delimited targets')

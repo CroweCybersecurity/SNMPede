@@ -31,7 +31,7 @@ Modules:
   -p PASSWORD, --password PASSWORD
                         Login with a password or line-delimited file
   --bulkwalk            Collect as much information as possible
-  --all                 CAUTION: Use all above modules and default login dictionaries
+  --all                 CAUTION: Use all above modules and default dictionaries unless provided
 
 I/O Arguments:
   -t TARGET, --target TARGET
@@ -125,4 +125,3 @@ Some of the many well known tools in the past include:
 - [Snmpcheck](https://www.nothink.org/codes/snmpcheck/index.php)
 - [braa](https://github.com/mteg/braa)
 - [Patator](https://github.com/lanjelot/patator)
-

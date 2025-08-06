@@ -1,4 +1,4 @@
-pysnmp = 7.1.21
+pysnmp == 7.1.21
 cryptography >= 43.0.1
 pysnmp-mibs
 psutil
