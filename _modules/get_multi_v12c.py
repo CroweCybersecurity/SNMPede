@@ -64,13 +64,13 @@ async def snmp_v12c_get_multi(semaphore, task_id, target, port, snmp_version, co
                     
                     for varBind in varBinds:
                         results.append({'Host': target[0], 'Port': port, 'Version': snmp_version, 'CommunityString': community_string, 'OID': config.OID_READ, 'Value': str(varBind), 'Status': "Success"})
-                        print('bind')
+                        #print('bind')
         
         finally:
             # Close the dispatcher after all requests
-            print('attempt')
+            #print('attempt')
             snmpDispatcher.transport_dispatcher.close_dispatcher()
-            print('attempt2')
+            #print('attempt2')
 
         if success is False and instance:
             del instance

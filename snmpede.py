@@ -3,7 +3,8 @@ import logging
 import argparse
 import argcomplete
 from csv import DictWriter
-from os.path import exists
+from os.path import exists, join
+from os import getcwd
 from sys import platform
 import asyncio
 from _modules.bulkwalk import *
@@ -42,7 +43,7 @@ async def main():
     module_group.add_argument('-p', '--password', type=str, help='Login with a password or line-delimited file') # Is used for auth and priv passwords/keys
     module_group.add_argument('--bulkwalk', action='store_true', help='Collect as much information as possible')
     #module_group.add_argument('--write', action='store_true', help='Check if write access is possible')
-    module_group.add_argument('--all', action='store_true', help='CAUTION: Use all above modules and default login dictionaries')
+    module_group.add_argument('--all', action='store_true', help='CAUTION: Use all above modules and default login dictionaries unless others provided')
 
     io_group = parser.add_argument_group('I/O Arguments')
     io_group.add_argument('-t', '--target', type=str, help='Singular hostname or IPv4/IPv6 address or file containing line-delimited targets')
@@ -152,27 +153,30 @@ async def main():
             print(f"[d] IPv4 local address: {config.INTERFACE_ADDR4}")
             print(f"[d] IPv6 local address: {config.INTERFACE_ADDR6}")
     
-
-    if args.all and not (args.community or args.username or args.password):
-        print("[e] Although the All module was specified, neither a community, username, or password was provided.")
-        parser.print_help()
-        quit()
-
     # Convert the singular or multiple ports to a list
     ports = await parse_ports(args.port)
     if config.ARGDEBUG >= 1: print("[d] " + str(len(ports)) + ' port(s)')
 
-    if args.community:
+    if args.community or args.all:
+        # If all and no provided files, use default dictionary
+        if args.all and not args.community:
+            args.community = join(getcwd(), 'Dictionaries', 'Community_Strings.txt')
         # Convert the singular or multiple community strings to a list
         community_strings = await convert_to_list(args.community)
         if config.ARGDEBUG >= 1: print("[d] " + str(len(community_strings)) + ' community string(s)')
 
-    if args.username:
+    if args.username or args.all:
+        # If all and no provided files, use default dictionary
+        if args.all and not args.username:
+            args.username = join(getcwd(), 'Dictionaries', 'Usernames.txt')
         # Convert the singular or multiple values to a list
         usernames = await convert_to_list(args.username)
         if config.ARGDEBUG >= 1: print("[d] " + str(len(usernames)) + ' username(s)')
 
-    if args.password:
+    if args.password or args.all:
+        # If all and no provided files, use default dictionary
+        if args.all and not args.password:
+            args.password = join(getcwd(), 'Dictionaries', 'Passwords.txt')
         if not args.username:
             print("[e] Password(s) detected, but no usernames detected. Please adjust.")
             quit()
@@ -289,6 +293,7 @@ async def main():
             quit()
 
         # Perform v2c community string spraying/checking
+        tasks = []
         task_results = []
         if len(Target_instances) > 0:
             for id, instance in enumerate(Target_instances):
