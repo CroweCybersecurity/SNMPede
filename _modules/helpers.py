@@ -4,67 +4,55 @@ from ipaddress import IPv4Address, IPv6Address, AddressValueError
 from re import compile
 from _modules import config
 
-global fqdn_regex
 fqdn_regex = compile(r'^(?=.{1,253}$)(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.[A-Za-z]{2,})+$')
 
-async def resolve_target(target):
-    # The first section here checks to see if the target is an IPv4 or IPv6 address string
-    # If it is an IP, return. No need to resolve an IP.
 
+async def resolve_target(target: str) -> tuple:
+    """Resolve a target to (FQDN, IP, Version)."""
     try:
-        # Check if it's an IPv4 address
         IPv4Address(target)
-        return (target, target, "v4") # FQDN, IP, Version
+        return (target, target, "v4")
     except AddressValueError:
-        # We can pass as the target may fit the next if statements
         pass
 
     try:
-        # Check if it's an IPv6 address
         IPv6Address(target)
-        return (target, target, "v6") # FQDN, IP, Version
+        return (target, target, "v6")
     except AddressValueError:
-        # We can pass as the target may fit the next if statements
         pass
 
-    # If it's a FQDN, resolve it and make a IP version determination
-    # based upon the first resolved record.
     if fqdn_regex.match(target):
         try:
             addr_info = getaddrinfo(target, None)
             if addr_info:
                 first_info = addr_info[0]
-                if first_info[0] == AF_INET: # IPv4
+                if first_info[0] == AF_INET:
                     return (target, first_info[4][0], 'v4')
-                elif first_info[0] == AF_INET6: # IPv6
+                elif first_info[0] == AF_INET6:
                     return (target, first_info[4][0], 'v6')
         except gaierror:
-            # We can pass as the next return will announce the failure.
             pass
 
     return (None, None, None)
 
 
-# MARK: Helpers
-async def convert_to_list(param):
-    # Check if the param is an existing file
+async def convert_to_list(param: str) -> list:
+    """Convert a file or string to a unique list of strings."""
     if exists(param):
         config.WASFILEIMPORTED = True
         with open(param, 'r') as file:
-            # Read the file into a list, stripping newline characters
             param_list = [line.strip() for line in file.readlines()]
-            # Remove duplicates
             seen = set()
             return [x for x in param_list if not (x in seen or seen.add(x))]
     else:
         return [param]
 
 
-async def parse_ports(ports):
+async def parse_ports(ports) -> list:
+    """Parse a port string or int into a list of ints."""
     port_list = []
-    # If a single port was provided
-    if type(ports) == int: return [ports]
-    # If more than one port was provided
+    if isinstance(ports, int):
+        return [ports]
     for part in ports.split(','):
         if '-' in part:
             start, end = map(int, part.split('-'))
@@ -74,8 +62,8 @@ async def parse_ports(ports):
     return port_list
 
 
-# Function to get instances with a specific attribute value
-def get_instances_with_attribute(instances, attribute_name, attribute_value=None):
+def get_instances_with_attribute(instances: list, attribute_name: str, attribute_value=None) -> list:
+    """Return instances with a given attribute set (optionally to a specific value)."""
     matching_instances = []
     for instance in instances:
         if attribute_value is not None:
@@ -86,7 +74,8 @@ def get_instances_with_attribute(instances, attribute_name, attribute_value=None
                 matching_instances.append(instance)
     return matching_instances
 
-# Function to help raise exception from async tasks
-def handle_task_result(task):
+
+def handle_task_result(task) -> None:
+    """Raise exception from async tasks if present."""
     if task.exception():
         print(f"Task exception: {task.exception()}")
