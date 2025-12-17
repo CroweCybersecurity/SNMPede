@@ -3,11 +3,12 @@ import logging
 import argparse
 import argcomplete
 from csv import DictWriter
-from os.path import exists, join
+from os.path import exists, join, isfile
 from os import getcwd
 from sys import platform
 import asyncio
 import psutil
+from socket import AF_INET, AF_INET6
 
 from _modules.bulkwalk import *
 from _modules import config
@@ -101,10 +102,20 @@ async def main():
         parser.print_help()
         quit()
     else:
-        # Convert the singular or multiple targets to a list
-        targets = await convert_to_list(args.target)
+        # If -t is an existing file path, treat it as a targets file and convert to a list
+        # Otherwise, treat -t as a literal IPv4/IPv6/FQDN target (and let resolution validate it)
+        if isinstance(args.target, str) and isfile(args.target):
+            targets = await convert_to_list(args.target)
+        else:
+            targets = [args.target]
+
+        if not targets:
+            print("[e] Target list is empty (targets file may be empty or unreadable).")
+            quit()
+
         if config.ARGDEBUG >= 1:
-            print("[d] Detected the following:\n[d] " + str(len(targets)) + ' target(s)')
+            print("[d] Detected the following:\n[d] " + str(len(targets)) + " target(s)")
+
         tasks = []
         for target in targets:  # Returns (FQDN, IP, Version)
             tasks.append(asyncio.create_task(resolve_target(target)))
@@ -125,34 +136,83 @@ async def main():
         print(f"[e] A resolution error occurred: {e}")
         quit()
 
-    # Check interface existance and compatibility
-    if args.interface:
-        # Get network interface addresses
-        interfaces = psutil.net_if_addrs()
+    # Keep only successfully resolved targets: (name, ip, "v4"/"v6")
+    resolved_targets = [
+        t for t in resolved_targets
+        if t and isinstance(t, (tuple, list)) and len(t) >= 3 and t[1] is not None and t[2] in ("v4", "v6")
+    ]
 
-        # Check if the NIC name exists in the addresses
-        for interface_name, addresses in interfaces.items():
-            if interface_name.lower() == (args.interface).lower():
-                for address in addresses:  # Single interface could have both an IPv4 and IPv6 address, or sadly multiple of each
-                    if any('v4' in tup for tup in resolved_targets) and address.family == AF_INET:
-                        config.INTERFACE_ADDR4 = address.address
-                    elif any('v6' in tup for tup in resolved_targets) and address.family == AF_INET6:
-                        config.INTERFACE_ADDR6 = address.address
-        if not config.INTERFACE_ADDR4 and not config.INTERFACE_ADDR6:
-            print("[e] Provided interface not found. Interfaces found:")
-            for interface_name, addresses in interfaces.items():
-                print("    '" + interface_name + "'")
+    if not resolved_targets:
+        print(f"[e] No valid targets were resolved from: {args.target}")
+        print("[i] If you intended a targets file, verify the file exists. Otherwise provide a valid IPv4/IPv6 address or resolvable FQDN.")
+        quit()
+
+    # Track which IP families are required by the provided targets
+    need_v4 = any('v4' in tup for tup in resolved_targets)
+    need_v6 = any('v6' in tup for tup in resolved_targets)
+    # Collect interfaces
+    interfaces = psutil.net_if_addrs()
+
+    # If declared, check interface exists in existent interfaces
+    if args.interface:
+        wanted = (args.interface or "").strip().lower()
+
+        # Find matching interface key (preserve original casing for messages)
+        iface_name = None
+        for name in interfaces.keys():
+            if name.lower() == wanted:
+                iface_name = name
+                break
+
+        if not iface_name:
+            print("[e] Provided interface name not found. Interfaces found:")
+            for name in interfaces.keys():
+                print("    '" + name + "'")
             quit()
-        elif any('v4' in tup for tup in resolved_targets) and not config.INTERFACE_ADDR4:
-            print("[e] An IPv4 target was provided, but the provided interface does not support IPv4.")
+
+        iface_addrs = interfaces.get(iface_name, [])
+
+        # Check if interface has appropriate IP version(s) given the target(s) provided
+        iface_has_v4 = any(a.family == AF_INET for a in iface_addrs)
+        iface_has_v6 = any(a.family == AF_INET6 for a in iface_addrs)
+
+        if need_v4 and not iface_has_v4:
+            print(f"[e] IPv4 targets were provided, but interface '{iface_name}' has no usable IPv4 address.")
+            print("[i] Addresses detected on that interface:")
+            for a in iface_addrs:
+                print(f"    family={a.family} addr={a.address}")
             quit()
-        elif any('v6' in tup for tup in resolved_targets) and not config.INTERFACE_ADDR6:
-            print("[e] An IPv6 target was provided, but the provided interface does not support IPv6.")
+
+        if need_v6 and not iface_has_v6:
+            print(f"[e] IPv6 targets were provided, but interface '{iface_name}' has no usable IPv6 address.")
+            print("[i] Addresses detected on that interface:")
+            for a in iface_addrs:
+                print(f"    family={a.family} addr={a.address}")
             quit()
-        elif config.ARGDEBUG >= 1:
-            print(f"[d] NIC: {args.interface}")
+
+        # Assign interface/IPv4/6 and handle exceptions
+        config.INTERFACE_ADDR4 = None
+        config.INTERFACE_ADDR6 = None
+
+        for a in iface_addrs:
+            if need_v4 and a.family == AF_INET and not config.INTERFACE_ADDR4:
+                config.INTERFACE_ADDR4 = a.address
+            elif need_v6 and a.family == AF_INET6 and not config.INTERFACE_ADDR6:
+                config.INTERFACE_ADDR6 = a.address
+
+        if (need_v4 and not config.INTERFACE_ADDR4) or (need_v6 and not config.INTERFACE_ADDR6):
+            print(f"[e] Interface '{iface_name}' was found, but a required IP address could not be selected.")
+            print(f"[i] need_v4={need_v4} need_v6={need_v6}")
+            print("[i] Addresses detected on that interface:")
+            for a in iface_addrs:
+                print(f"    family={a.family} addr={a.address}")
+            quit()
+
+        if config.ARGDEBUG >= 1:
+            print(f"[d] NIC: {iface_name}")
             print(f"[d] IPv4 local address: {config.INTERFACE_ADDR4}")
             print(f"[d] IPv6 local address: {config.INTERFACE_ADDR6}")
+
 
     # Convert the singular or multiple ports to a list
     ports = await parse_ports(args.port)

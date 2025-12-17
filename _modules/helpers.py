@@ -3,6 +3,7 @@ from socket import getaddrinfo, gaierror, AF_INET, AF_INET6
 from ipaddress import IPv4Address, IPv6Address, AddressValueError
 from re import compile
 from _modules import config
+from asyncio import CancelledError
 
 fqdn_regex = compile(r'^(?=.{1,253}$)(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.[A-Za-z]{2,})+$')
 
@@ -76,6 +77,12 @@ def get_instances_with_attribute(instances: list, attribute_name: str, attribute
 
 
 def handle_task_result(task) -> None:
-    """Raise exception from async tasks if present."""
-    if task.exception():
-        print(f"Task exception: {task.exception()}")
+    """Surface real task exceptions, but ignore normal cancellations (Ctrl+C/shutdown)."""
+    try:
+        exc = task.exception()
+    except CancelledError:
+        # Expected during shutdown; don't spam tracebacks
+        return
+
+    if exc:
+        print(f"Task exception: {exc!r}")
