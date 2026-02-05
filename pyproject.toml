@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "snmpede"
+version = "2.1.0"
+description = "Pure Python wrapper script to simplify attacking SNMP v1/2c/3."
+readme = { text = "Pure Python wrapper script around the PySNMP project built to simplify attacking SNMP v1/2c/3 across IPv4/6 systems.", content-type = "text/plain" }
+requires-python = ">=3.9"
+authors = [{ name = "Crowe LLP" }]
+
+dependencies = [
+  "pysnmp==7.1.21",
+  "cryptography>=43.0.1",
+  "pysnmp-mibs",
+  "psutil",
+  "argcomplete"
+]
+
+[tool.setuptools]
+py-modules = ["snmpede"]

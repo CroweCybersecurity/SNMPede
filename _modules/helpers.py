@@ -5,7 +5,8 @@ from re import compile
 from _modules import config
 from asyncio import CancelledError
 
-fqdn_regex = compile(r'^(?=.{1,253}$)(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.[A-Za-z]{2,})+$')
+fqdn_regex = compile(
+    r'^(?=.{1,253}$)(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.[A-Za-z]{2,})+$')
 
 
 async def resolve_target(target: str) -> tuple:
@@ -63,21 +64,38 @@ async def parse_ports(ports) -> list:
     return port_list
 
 
-def get_instances_with_attribute(instances: list, attribute_name: str, attribute_value=None) -> list:
-    """Return instances with a given attribute set (optionally to a specific value)."""
+def get_instances_with_attribute(
+        instances: list,
+        attribute_name: str,
+        attribute_value=None) -> list:
+    """
+    Return instances with a given attribute set (optionally to a specific
+    value).
+    """
     matching_instances = []
     for instance in instances:
         if attribute_value is not None:
-            if hasattr(instance, attribute_name) and getattr(instance, attribute_name) == attribute_value:
+            if hasattr(
+                    instance,
+                    attribute_name) and getattr(
+                    instance,
+                    attribute_name) == attribute_value:
                 matching_instances.append(instance)
         else:
-            if hasattr(instance, attribute_name) and getattr(instance, attribute_name) is not None:
+            if hasattr(
+                    instance,
+                    attribute_name) and getattr(
+                    instance,
+                    attribute_name) is not None:
                 matching_instances.append(instance)
     return matching_instances
 
 
 def handle_task_result(task) -> None:
-    """Surface real task exceptions, but ignore normal cancellations (Ctrl+C/shutdown)."""
+    """
+    Surface real task exceptions, but ignore normal cancellations
+    (Ctrl+C/shutdown).
+    """
     try:
         exc = task.exception()
     except CancelledError:
