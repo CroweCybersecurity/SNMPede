@@ -5,10 +5,19 @@ from _modules.classes import Target
 
 # MARK: v3 NoAuthNoPriv
 # Multi means multiple hosts
+
+
 async def snmp_v3_get_multi(
-    semaphore, task_id, target, port, usernames,
-    authpasswords=None, authprotocols=None, privpasswords=None, privprotocols=None, instance=None
-):
+        semaphore,
+        task_id,
+        target,
+        port,
+        usernames,
+        authpasswords=None,
+        authprotocols=None,
+        privpasswords=None,
+        privprotocols=None,
+        instance=None):
     async with semaphore:
         if config.ARGDEBUG >= 1:
             print(f"[d] Acquired task {task_id}")
@@ -19,7 +28,9 @@ async def snmp_v3_get_multi(
         results = []
 
         if config.ENGINE_ID:
-            snmpEngine = SnmpEngine(snmpEngineID=OctetString(hexValue=config.ENGINE_ID))
+            snmpEngine = SnmpEngine(
+                snmpEngineID=OctetString(
+                    hexValue=config.ENGINE_ID))
         else:
             snmpEngine = SnmpEngine()
 
@@ -40,29 +51,43 @@ async def snmp_v3_get_multi(
 
         await asyncio.sleep(config.ARGDELAY)
 
-        if type(usernames) == list:
+        if isinstance(usernames, list):
             for username in usernames:
                 if config.ARGDEBUG >= 1:
                     print(f"[d] '{username}' -> {target[0]}:{port}")
-                errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
+                (errorIndication,
+                 errorStatus,
+                 errorIndex,
+                 varBinds) = await get_cmd(
                     snmpEngine,
                     UsmUserData(userName=username),
                     transport_target,
                     ContextData(),
-                    ObjectType(ObjectIdentity(config.OID_READ))
+                    ObjectType(ObjectIdentity(config.OID_READ)),
                 )
                 if errorIndication:
-                    if "Wrong SNMP PDU digest" in str(errorIndication) or "Unsupported SNMP security level" in str(errorIndication):
+                    if ("Wrong SNMP PDU digest" in str(errorIndication) or
+                            "Unsupported SNMP security level" in
+                            str(errorIndication)):
                         print(f"[!] Found '{username}' at {target[0]}:{port}")
 
                         if not instance or success is True:
-                            Target_instances.append(Target(target[0], target[1], target[2], port, SNMPVersion='v3', Username=username))
+                            Target_instances.append(
+                                Target(
+                                    target[0],
+                                    target[1],
+                                    target[2],
+                                    port,
+                                    SNMPVersion='v3',
+                                    Username=username))
                             success = True
                         else:
                             instance.SNMPVersion = 'v3'
                             instance.Username = username
-                            # Because we are not setting Target.Access = True and it is still false with a Username,
-                            # we tell future processses that NoAuthNoPriv was not sufficient, more is needed.
+                            # Because we are not setting Target.Access = True
+                            # and it is still false with a Username,
+                            # we tell future processses that NoAuthNoPriv was
+                            # not sufficient, more is needed.
                             success = True
 
                         results.append({
@@ -113,7 +138,15 @@ async def snmp_v3_get_multi(
                 else:
                     print(f"[!] Found '{username}' at {target[0]}:{port}")
                     if not instance or success is True:
-                        Target_instances.append(Target(target[0], target[1], target[2], port, SNMPVersion='v3', Username=username, Access=True))
+                        Target_instances.append(
+                            Target(
+                                target[0],
+                                target[1],
+                                target[2],
+                                port,
+                                SNMPVersion='v3',
+                                Username=username,
+                                Access=True))
                         success = True
                     else:
                         instance.SNMPVersion = 'v3'
@@ -145,13 +178,23 @@ async def snmp_v3_get_multi(
             for password in authpasswords:
                 for protocol in authprotocols:
                     if config.ARGDEBUG >= 1:
-                        print(f"[d] '{usernames}/{password}/{protocol['Name']}' -> {target[0]}:{port}")
-                    errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
+                        print(
+                            f"[d] '{usernames}/{password}/{protocol['Name']}' "
+                            f"-> {target[0]}:{port}"
+                        )
+                    (errorIndication,
+                     errorStatus,
+                     errorIndex,
+                     varBinds) = await get_cmd(
                         snmpEngine,
-                        UsmUserData(userName=usernames, authKey=password, authProtocol=protocol['Class']),
+                        UsmUserData(
+                            userName=usernames,
+                            authKey=password,
+                            authProtocol=protocol['Class'],
+                        ),
                         transport_target,
                         ContextData(),
-                        ObjectType(ObjectIdentity(config.OID_READ))
+                        ObjectType(ObjectIdentity(config.OID_READ)),
                     )
                     if errorIndication:
                         if "Wrong SNMP PDU digest" in str(errorIndication):
@@ -168,8 +211,13 @@ async def snmp_v3_get_multi(
                                 'Value': None,
                                 'Status': f"Wrong Pwd/Algo: {errorIndication}"
                             })
-                        elif "Unsupported SNMP security level" in str(errorIndication):
-                            print(f"[!] Found '{usernames}/{password}/{protocol['Name']}' at {target[0]}:{port}, but requires AuthPriv")
+                        elif "Unsupported SNMP security level" in str(
+                                errorIndication):
+                            print(
+                                f"[!] Found '{usernames}/{password}/"
+                                f"{protocol['Name']}' at {target[0]}:{port}, "
+                                "but requires AuthPriv"
+                            )
                             results.append({
                                 'Host': target[0],
                                 'Port': port,
@@ -181,7 +229,10 @@ async def snmp_v3_get_multi(
                                 'PrivProtocol': None,
                                 'OID': config.OID_READ,
                                 'Value': None,
-                                'Status': f"Correct Auth, But Requires Priv: {errorIndication}"
+                                'Status': (
+                                    "Correct Auth, But Requires Priv: "
+                                    f"{errorIndication}"
+                                )
                             })
                             if instance:
                                 instance.AuthPwd = password
@@ -233,7 +284,10 @@ async def snmp_v3_get_multi(
                             'Status': f"Error: {errorStatus.prettyPrint()}"
                         })
                     else:
-                        print(f"[!] Found '{usernames}/{password}/{protocol['Name']}' at {target[0]}:{port}")
+                        print(
+                            f"[!] Found '{usernames}/{password}/"
+                            f"{protocol['Name']}' at {target[0]}:{port}"
+                        )
                         instance.AuthPwd = password
                         instance.AuthProto = protocol
                         instance.Access = True
@@ -267,19 +321,26 @@ async def snmp_v3_get_multi(
             for password in privpasswords:
                 for protocol in privprotocols:
                     if config.ARGDEBUG >= 1:
-                        print(f"[d] '{usernames}/{authpasswords}/{authprotocols['Name']}/{password}/{protocol['Name']}' -> {target[0]}:{port}")
-                    errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
+                        print(
+                            f"[d] '{usernames}/{authpasswords}/"
+                            f"{authprotocols['Name']}/{password}/"
+                            f"{protocol['Name']}' -> {target[0]}:{port}"
+                        )
+                    (errorIndication,
+                     errorStatus,
+                     errorIndex,
+                     varBinds) = await get_cmd(
                         snmpEngine,
                         UsmUserData(
                             userName=usernames,
                             authKey=authpasswords,
                             authProtocol=authprotocols['Class'],
                             privKey=password,
-                            privProtocol=protocol['Class']
+                            privProtocol=protocol['Class'],
                         ),
                         transport_target,
                         ContextData(),
-                        ObjectType(ObjectIdentity(config.OID_READ))
+                        ObjectType(ObjectIdentity(config.OID_READ)),
                     )
 
                     if errorIndication:
@@ -313,7 +374,11 @@ async def snmp_v3_get_multi(
                             'Status': f"Error: {errorStatus.prettyPrint()}"
                         })
                     else:
-                        print(f"[!] Found '{usernames}/{authpasswords}/{authprotocols['Name']}/{password}/{protocol['Name']}' at {target[0]}:{port}")
+                        print(
+                            f"[!] Found '{usernames}/{authpasswords}/"
+                            f"{authprotocols['Name']}/{password}/"
+                            f"{protocol['Name']}' at {target[0]}:{port}"
+                        )
                         instance.PrivPwd = password
                         instance.PrivProto = protocol
                         instance.Access = True

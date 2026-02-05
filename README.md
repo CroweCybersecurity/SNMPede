@@ -62,7 +62,7 @@ I/O Arguments:
 
 To install the tool, install/upgrade these various packages:
 
-```cmd
+```bash
 python -m pip install -r 'requirements.txt'
 ```
 
@@ -80,13 +80,13 @@ This selection will:
 4. Spray v3 usernames, authentication passwords/algorithms, and privacy passwords/algorithms (AuthPriv)
 5. BulkWalk any v2c/v3 successfully accessed SNMP agents
 
-```cmd
+```bash
 python snmpede.py --all -t 'targets.txt'
 ```
 
 ### Spray: Community Strings
 
-```cmd
+```bash
 python snmpede.py -t 'targets.txt' -c 'Dictionaries/Community_Strings.txt'
 ```
 
@@ -98,7 +98,7 @@ This selection will:
 2. Spray usernames and authentication passwords/algorithms (AuthNoPriv)
 3. Spray usernames, authentication passwords/algorithms, and privacy passwords/algorithms (AuthPriv)
 
-```cmd
+```bash
 python snmpede.py -t 'targets.txt' -u 'Dictionaries/Usernames.txt' -p 'Dictionaries/Passwords.txt'
 ```
 
@@ -115,13 +115,14 @@ That said, we appreciate all the help these tools have introduced to the InfoSec
 
 Some of the many well known tools in the past include:
 
-- [Net-SNMP](http://www.net-snmp.org/)
-- [onesixtyone](https://github.com/trailofbits/onesixtyone)
-- [SNscan](https://www.softpedia.com/get/Network-Tools/Network-IP-Scanner/SNScan.shtml)
-- [Hydra](https://github.com/vanhauser-thc/thc-hydra)
-- [Nmap snmp-brute](https://nmap.org/nsedoc/scripts/snmp-brute.html)
-- [Metasploit](https://github.com/rapid7/metasploit-framework/blob/master/documentation/modules/auxiliary/scanner/snmp/snmp_login.md)
-- [snmpwn](https://github.com/hatlord/snmpwn)
-- [Snmpcheck](https://www.nothink.org/codes/snmpcheck/index.php)
 - [braa](https://github.com/mteg/braa)
+- [Hydra](https://github.com/vanhauser-thc/thc-hydra)
+- [Medusa](https://salsa.debian.org/pkg-security-team/medusa)
+- [Metasploit](https://github.com/rapid7/metasploit-framework/blob/master/documentation/modules/auxiliary/scanner/snmp/snmp_login.md)
+- [Net-SNMP](http://www.net-snmp.org/)
+- [Nmap snmp-brute](https://nmap.org/nsedoc/scripts/snmp-brute.html)
+- [onesixtyone](https://github.com/trailofbits/onesixtyone)
 - [Patator](https://github.com/lanjelot/patator)
+- [Snmpcheck](https://www.nothink.org/codes/snmpcheck/index.php)
+- [snmpwn](https://github.com/hatlord/snmpwn)
+- [SNscan](https://www.softpedia.com/get/Network-Tools/Network-IP-Scanner/SNScan.shtml)

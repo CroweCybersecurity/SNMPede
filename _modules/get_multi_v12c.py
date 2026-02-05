@@ -5,7 +5,16 @@ from _modules.classes import Target
 
 # MARK: v1/2c Get_Multi
 # Multi means multiple hosts
-async def snmp_v12c_get_multi(semaphore, task_id, target, port, snmp_version, community_strings, instance=None):
+
+
+async def snmp_v12c_get_multi(
+        semaphore,
+        task_id,
+        target,
+        port,
+        snmp_version,
+        community_strings,
+        instance=None):
     async with semaphore:
         if config.ARGDEBUG >= 1:
             print(f"[d] Acquired {snmp_version} task {task_id}")
@@ -16,7 +25,8 @@ async def snmp_v12c_get_multi(semaphore, task_id, target, port, snmp_version, co
 
         await asyncio.sleep(config.ARGDELAY)
 
-        # SNMPv1 is mpModel 0, SNMPv2c is mpModel 1. Note that 2c often is backwards compatible
+        # SNMPv1 is mpModel 0, SNMPv2c is mpModel 1. Note that 2c often is
+        # backwards compatible
         mpModel = 0 if snmp_version == 'v1' else 1
 
         if target[2] == 'v4':
@@ -40,15 +50,21 @@ async def snmp_v12c_get_multi(semaphore, task_id, target, port, snmp_version, co
         try:
             for community_string in community_strings:
                 if config.ARGDEBUG >= 1:
-                    print(f"[d] '{community_string}' -> {target[0]}:{port}/{snmp_version}")
+                    print(
+                        f"[d] '{community_string}' -> "
+                        f"{target[0]}:{port}/{snmp_version}"
+                    )
 
                 await asyncio.sleep(config.ARGDELAY)
 
-                errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
+                (errorIndication,
+                 errorStatus,
+                 errorIndex,
+                 varBinds) = await get_cmd(
                     snmpDispatcher,
                     CommunityData(community_string, mpModel=mpModel),
                     transport_target,
-                    ObjectType(ObjectIdentity(config.OID_READ))
+                    ObjectType(ObjectIdentity(config.OID_READ)),
                 )
 
                 if errorIndication:
@@ -76,7 +92,10 @@ async def snmp_v12c_get_multi(semaphore, task_id, target, port, snmp_version, co
                         'Status': f"Error: {errorStatus.prettyPrint()}"
                     })
                 else:
-                    print(f"[!] Found '{community_string}' at {target[0]}:{port}/{snmp_version}")
+                    print(
+                        f"[!] Found '{community_string}' at "
+                        f"{target[0]}:{port}/{snmp_version}"
+                    )
                     if not instance or success is True:
                         new_target = Target(
                             target[0], target[1], target[2], port,
@@ -94,13 +113,16 @@ async def snmp_v12c_get_multi(semaphore, task_id, target, port, snmp_version, co
                             Target_instances.append(new_target)
                         success = True
                     else:
-                        # Do NOT mutate the instance's SNMPVersion or CommunityString!
+                        # Do NOT mutate the instance's SNMPVersion or
+                        # CommunityString!
                         new_target = Target(
-                            instance.FQDN, instance.IP, instance.IPVersion, instance.Port,
+                            instance.FQDN,
+                            instance.IP,
+                            instance.IPVersion,
+                            instance.Port,
                             SNMPVersion=snmp_version,
                             CommunityString=community_string,
-                            Access=True
-                        )
+                            Access=True)
                         if not any(
                             t.FQDN == new_target.FQDN and
                             t.Port == new_target.Port and

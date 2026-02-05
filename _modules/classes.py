@@ -2,33 +2,65 @@
 
 class Target:
     def __init__(
-        self, FQDN, IP, IPVersion, Port, SNMPVersion=None, CommunityString=None,
-        Username=None, AuthPwd=None, AuthProto={'Name': None, 'Class': None},
-        PrivPwd=None, PrivProto={'Name': None, 'Class': None}, Access=False
-    ):
-        self.FQDN = FQDN  # Some provided targets may not have a DNS FQDN. If they don't, this will be the IP address also.
+            self,
+            FQDN,
+            IP,
+            IPVersion,
+            Port,
+            SNMPVersion=None,
+            CommunityString=None,
+            Username=None,
+            AuthPwd=None,
+            AuthProto={
+                'Name': None,
+                'Class': None},
+            PrivPwd=None,
+            PrivProto={
+                'Name': None,
+                'Class': None},
+            Access=False):
+        # Some provided targets may not have a DNS FQDN. If they don't, this
+        # will be the IP address also.
+        self.FQDN = FQDN
         self.IP = IP
         self.IPVersion = IPVersion
         self.SNMPVersion = SNMPVersion
         self.CommunityString = CommunityString
         self.Username = Username
         self.AuthPwd = AuthPwd
-        self.AuthProto = AuthProto  # ['Name': 'NicknameAlgo', 'Class': USMAlgoClass]
+        # ['Name': 'NicknameAlgo', 'Class': USMAlgoClass]
+        self.AuthProto = AuthProto
         self.PrivPwd = PrivPwd
-        self.PrivProto = PrivProto  # ['Name': 'NicknameAlgo', 'Class': USMAlgoClass]
+        # ['Name': 'NicknameAlgo', 'Class': USMAlgoClass]
+        self.PrivProto = PrivProto
         self.Port = Port
-        # We'll use this below attribute to keep track of if an entry needs more spraying
-        # Like don't spray usernames on this instance if a community string was successfully found
+        # We'll use this below attribute to keep track of if an entry needs
+        # more spraying.
+        # Like don't spray usernames on this instance if a community string
+        # was successfully found.
         # And vice versa.
         self.Access = Access
 
     def __str__(self):
         if self.PrivProto:
-            return f"[d]   {self.FQDN}:{self.Port}/{self.SNMPVersion} via {self.CommunityString}/{self.Username}/{self.AuthPwd}/{self.AuthProto['Name']}/{self.PrivPwd}/{self.PrivProto['Name']}, Access: {self.Access}"
+            return (
+                f"[d]   {self.FQDN}:{self.Port}/{self.SNMPVersion} via "
+                f"{self.CommunityString}/{self.Username}/{self.AuthPwd}/"
+                f"{self.AuthProto['Name']}/{self.PrivPwd}/"
+                f"{self.PrivProto['Name']}, Access: {self.Access}"
+            )
         elif self.AuthProto:
-            return f"[d]   {self.FQDN}:{self.Port}/{self.SNMPVersion} via {self.CommunityString}/{self.Username}/{self.AuthPwd}/{self.AuthProto['Name']}/None/None, Access: {self.Access}"
+            return (
+                f"[d]   {self.FQDN}:{self.Port}/{self.SNMPVersion} via "
+                f"{self.CommunityString}/{self.Username}/{self.AuthPwd}/"
+                f"{self.AuthProto['Name']}/None/None, Access: {self.Access}"
+            )
         else:
-            return f"[d]   {self.FQDN}:{self.Port}/{self.SNMPVersion} via {self.CommunityString}/{self.Username}/None/None/None/None, Access: {self.Access}"
+            return (
+                f"[d]   {self.FQDN}:{self.Port}/{self.SNMPVersion} via "
+                f"{self.CommunityString}/{self.Username}/None/None/None/None, "
+                f"Access: {self.Access}"
+            )
 
     @property
     def IPVersion(self):
@@ -37,7 +69,8 @@ class Target:
     @IPVersion.setter
     def IPVersion(self, value):
         if value not in ["v4", "v6", 'both']:
-            # If presented the option between v4 or v6, we mark it based upon the first resolved record's type
+            # If presented the option between v4 or v6, we mark it based upon
+            # the first resolved record's type
             raise ValueError("IPVersion must be 'v4' or 'v6'.")
         self._IPVersion = value
 
