@@ -12,7 +12,7 @@ authors = [{ name = "Crowe LLP" }]
 
 dependencies = [
   "pysnmp==7.1.21",
-  "cryptography>=43.0.1",
+  "cryptography>=43.0.1,<49",
   "pysnmp-mibs",
   "psutil",
   "argcomplete"
