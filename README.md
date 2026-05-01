@@ -14,9 +14,9 @@ The following features are built into SNMPede:
 - BulkWalk of entire SNMP agents (v2c/v3)
 
 ```cmd
-usage: snmpede.py [-h] [-c COMMUNITY] [-u USERNAME] [-p PASSWORD] [--bulkwalk] [--all] [-t TARGET] [-pt PORT]
-                  [-i INTERFACE] [-eid ENGINE_ID] [-o OUTPUT] [-d {0,1,2}] [-to TIMEOUT] [-rt RETRIES] [-dl DELAY]
-                  [-or OID_READ] [-tk TASKS]
+usage: snmpede [-h] [-c COMMUNITY] [-u USERNAME] [-p PASSWORD] [--bulkwalk] [--all] [-t TARGET] [-pt PORT]
+               [-i INTERFACE] [-eid ENGINE_ID] [-o OUTPUT] [-l LOG] [-d {0,1,2}] [-to TIMEOUT] [-rt RETRIES]
+               [-dl DELAY] [-or OID_READ] [-tk TASKS]
 
 A modern and intelligent approach to SNMP hacking
 
@@ -44,6 +44,7 @@ I/O Arguments:
                         Specify a hex agent engine ID (e.g., 0x80000000011234567890abcdef)
   -o OUTPUT, --output OUTPUT
                         CSV prepended output filename/path
+  -l LOG, --log LOG     Debug level 2 text output file
   -d {0,1,2}, --debug {0,1,2}
                         Debug level to stdout
   -to TIMEOUT, --timeout TIMEOUT
@@ -60,9 +61,22 @@ I/O Arguments:
 
 ## Installation
 
-To install the tool, install/upgrade these various packages:
+To install SNMPede as a command line tool with [uv](https://docs.astral.sh/uv/):
 
 ```bash
+uv tool install git+https://github.com/CroweCybersecurity/SNMPede
+```
+
+After installation, run SNMPede with:
+
+```bash
+snmpede --help
+```
+
+Alternatively to uv, you can install/upgrade the requirements with traditional pip:
+
+```bash
+git clone https://github.com/CroweCybersecurity/SNMPede && cd ./SNMPede
 python -m pip install -r 'requirements.txt'
 ```
 
@@ -81,13 +95,25 @@ This selection will:
 5. BulkWalk any v2c/v3 successfully accessed SNMP agents
 
 ```bash
-python snmpede.py --all -t 'targets.txt'
+snmpede --all -t 'Targets.txt'
 ```
+
+When `--all` is used and `-c`, `-u`, or `-p` are not provided, SNMPede uses the default dictionaries. On first use, packaged defaults are copied to a user-editable dictionary directory:
+
+- Linux: `$XDG_CONFIG_HOME/snmpede/Dictionaries/` or `~/.config/snmpede/Dictionaries/`
+- macOS: `~/Library/Application Support/SNMPede/Dictionaries/`
+- Windows: `%APPDATA%\SNMPede\Dictionaries\`
+
+The editable dictionary files in those directories are:
+
+- `Community_Strings.txt`
+- `Usernames.txt`
+- `Passwords.txt`
 
 ### Spray: Community Strings
 
 ```bash
-python snmpede.py -t 'targets.txt' -c 'Dictionaries/Community_Strings.txt'
+snmpede -t 'Targets.txt' -c 'path/to/CustomCommunity_Strings.txt'
 ```
 
 ### Spray: Passwords
@@ -99,7 +125,7 @@ This selection will:
 3. Spray usernames, authentication passwords/algorithms, and privacy passwords/algorithms (AuthPriv)
 
 ```bash
-python snmpede.py -t 'targets.txt' -u 'Dictionaries/Usernames.txt' -p 'Dictionaries/Passwords.txt'
+snmpede -t 'Targets.txt' -u 'path/to/CustomUsernames.txt' -p 'path/to/CustomPasswords.txt'
 ```
 
 ## Existing Research
