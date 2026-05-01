@@ -20,3 +20,10 @@ dependencies = [
 
 [tool.setuptools]
 py-modules = ["snmpede"]
+packages = ["_modules", "Dictionaries"]
+
+[tool.setuptools.package-data]
+Dictionaries = ["*.txt"]
+
+[project.scripts]
+snmpede = "snmpede:cli"

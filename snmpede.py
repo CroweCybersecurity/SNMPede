@@ -3,8 +3,10 @@ import logging
 import argparse
 import argcomplete
 from csv import DictWriter
-from os.path import exists, join, isfile
-from os import getcwd
+from importlib import resources
+from os import environ
+from os.path import exists, isfile
+from pathlib import Path
 from sys import platform
 import asyncio
 import psutil
@@ -31,6 +33,43 @@ def append_csv(filepath, fieldnames, data):
         writer = DictWriter(csvfile, fieldnames=fieldnames)
         for d in data:
             writer.writerow(d)
+
+
+DEFAULT_DICTIONARY_PACKAGE = 'Dictionaries'
+DEFAULT_DICTIONARY_FILES = {
+    'community': 'Community_Strings.txt',
+    'username': 'Usernames.txt',
+    'password': 'Passwords.txt',
+}
+
+
+def get_user_dictionary_dir():
+    if platform == 'win32':
+        base_dir = environ.get('APPDATA')
+        if base_dir:
+            return Path(base_dir) / 'SNMPede' / 'Dictionaries'
+        return Path.home() / 'AppData' / 'Roaming' / 'SNMPede' / 'Dictionaries'
+
+    if platform == 'darwin':
+        return (Path.home() / 'Library' / 'Application Support' /
+                'SNMPede' / 'Dictionaries')
+
+    base_dir = environ.get('XDG_CONFIG_HOME')
+    if base_dir:
+        return Path(base_dir) / 'snmpede' / 'Dictionaries'
+    return Path.home() / '.config' / 'snmpede' / 'Dictionaries'
+
+
+def get_default_dictionary_path(filename):
+    dictionary_dir = get_user_dictionary_dir()
+    dictionary_dir.mkdir(parents=True, exist_ok=True)
+
+    destination = dictionary_dir / filename
+    if not destination.exists():
+        source = resources.files(DEFAULT_DICTIONARY_PACKAGE).joinpath(filename)
+        destination.write_bytes(source.read_bytes())
+
+    return str(destination)
 
 
 # MARK: Main
@@ -154,6 +193,13 @@ async def main():
 
     argcomplete.autocomplete(parser)
     args = parser.parse_args()
+    run_community_module = bool(args.community or args.all)
+    run_username_module = bool(args.username or args.all)
+    run_password_module = bool(args.password or args.all)
+    run_bulkwalk_module = bool(args.bulkwalk or args.all)
+    community_source = args.community
+    username_source = args.username
+    password_source = args.password
     Target_instances = set()
     semaphore = asyncio.Semaphore(args.tasks)
     await asyncio.sleep(0.2)
@@ -223,8 +269,8 @@ async def main():
         for target in targets:  # Returns (FQDN, IP, Version)
             tasks.append(asyncio.create_task(resolve_target(target)))
 
-    if not (args.community or args.username or args.password or
-            args.bulkwalk or args.all):  # args.scan
+    if not (run_community_module or run_username_module or
+            run_password_module or run_bulkwalk_module):  # args.scan
         print("[e] No module was selected. Please pick one:")
         parser.print_help()
         quit()
@@ -338,34 +384,34 @@ async def main():
     if config.ARGDEBUG >= 1:
         print("[d] " + str(len(ports)) + ' port(s)')
 
-    if args.community or args.all:
+    if run_community_module:
         # If all and no provided files, use default dictionary
-        if args.all and not args.community:
-            args.community = join(
-                getcwd(),
-                'Dictionaries',
-                'Community_Strings.txt')
+        if args.all and not community_source:
+            community_source = get_default_dictionary_path(
+                DEFAULT_DICTIONARY_FILES['community'])
         # Convert the singular or multiple community strings to a list
-        community_strings = await convert_to_list(args.community)
+        community_strings = await convert_to_list(community_source)
         if config.ARGDEBUG >= 1:
             print("[d] " +
                   str(len(community_strings)) +
                   ' community string(s)')
 
-    if args.username or args.all:
+    if run_username_module:
         # If all and no provided files, use default dictionary
-        if args.all and not args.username:
-            args.username = join(getcwd(), 'Dictionaries', 'Usernames.txt')
+        if args.all and not username_source:
+            username_source = get_default_dictionary_path(
+                DEFAULT_DICTIONARY_FILES['username'])
         # Convert the singular or multiple values to a list
-        usernames = await convert_to_list(args.username)
+        usernames = await convert_to_list(username_source)
         if config.ARGDEBUG >= 1:
             print("[d] " + str(len(usernames)) + ' username(s)')
 
-    if args.password or args.all:
+    if run_password_module:
         # If all and no provided files, use default dictionary
-        if args.all and not args.password:
-            args.password = join(getcwd(), 'Dictionaries', 'Passwords.txt')
-        if not args.username:
+        if args.all and not password_source:
+            password_source = get_default_dictionary_path(
+                DEFAULT_DICTIONARY_FILES['password'])
+        if not run_username_module:
             print(
                 "[e] Password(s) detected, but no usernames detected. "
                 "Please adjust."
@@ -373,7 +419,7 @@ async def main():
             quit()
 
         # Convert the singular or multiple passwords to a list
-        passwords = await convert_to_list(args.password)
+        passwords = await convert_to_list(password_source)
         if config.ARGDEBUG >= 1:
             print("[d] " + str(len(passwords)) + ' password(s)')
 
@@ -459,7 +505,7 @@ async def main():
         intention = 'Check'
 
     # MARK: Comm_Strings
-    if args.community:
+    if run_community_module:
         if config.ARGDEBUG >= 1:
             print()  # For pretty stdout #  and not args.scan
         print(f"[i] {intention}ing SNMP v1/2c community string(s)...")
@@ -601,12 +647,12 @@ async def main():
 
         print('[-] Writing results...\n')
 
-        if len(Target_instances) == 0 and not args.username:
+        if len(Target_instances) == 0 and not run_username_module:
             quit()
 
     # MARK: UserEnum
-    if args.username:
-        if config.ARGDEBUG >= 1 and not args.community:
+    if run_username_module:
+        if config.ARGDEBUG >= 1 and not run_community_module:
             print()  # For pretty stdout # (args.scan or args.community)
         print(f"[i] {intention}ing SNMP v3 username(s) with NoAuthNoPriv...")
         tasks = []
@@ -717,7 +763,7 @@ async def main():
             quit()
 
     # MARK: AuthPwd
-    if args.password:
+    if run_password_module:
         tasks = []
         task_results = []
 
@@ -895,7 +941,7 @@ async def main():
         print()
 
     # MARK: BulkWalk
-    if args.bulkwalk or args.all:
+    if run_bulkwalk_module:
         # Doing async like this so that we don't DDoS a specific SNMP agent
         instances = get_instances_with_attribute(
             Target_instances, 'CommunityString')
@@ -1043,7 +1089,7 @@ async def main():
                 '[d] As no usernames were found, skipping applicable BulkWalk.'
             )
 
-if __name__ == '__main__':
+def cli():
     try:
         if platform == 'win32':
             # https://stackoverflow.com/questions/63860576/
@@ -1053,3 +1099,7 @@ if __name__ == '__main__':
         asyncio.run(main())
     except KeyboardInterrupt:
         print('[e] Program termination requested by user')
+
+
+if __name__ == '__main__':
+    cli()
